@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: virt-platform-operator-system
+  name: openshift-cnv
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: virt-platform-operator-controller-manager
-  namespace: virt-platform-operator-system
+  namespace: openshift-cnv
   labels:
     app: virt-platform-operator
     control-plane: controller-manager

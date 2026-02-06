@@ -5,7 +5,7 @@
 
 set -e
 
-CRDS_DIR="internal/assets/crds"
+CRDS_DIR="assets/crds"
 TEMP_DIR=$(mktemp -d)
 
 echo "Updating CRDs in $CRDS_DIR"

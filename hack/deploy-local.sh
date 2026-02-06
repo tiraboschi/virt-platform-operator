@@ -4,7 +4,7 @@ set -e
 
 CLUSTER_NAME="${CLUSTER_NAME:-virt-platform-operator}"
 IMAGE_NAME="${IMAGE_NAME:-virt-platform-operator:latest}"
-NAMESPACE="${NAMESPACE:-virt-platform-operator-system}"
+NAMESPACE="${NAMESPACE:-openshift-cnv}"
 
 # Colors for output
 RED='\033[0;31m'

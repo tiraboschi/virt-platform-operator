@@ -10,8 +10,8 @@
 set -e
 
 CLUSTER_NAME="${CLUSTER_NAME:-virt-platform-operator}"
-KIND_VERSION="${KIND_VERSION:-v0.20.0}"
-KUBERNETES_VERSION="${KUBERNETES_VERSION:-v1.34.0}"
+KIND_VERSION="${KIND_VERSION:-v0.31.0}"
+KUBERNETES_VERSION="${KUBERNETES_VERSION:-v1.35.0}"
 
 # Detect container runtime (docker or podman)
 detect_runtime() {
@@ -76,8 +76,6 @@ install_kind() {
 create_cluster() {
     echo "Creating Kind cluster: $CLUSTER_NAME"
 
-    # Simple cluster creation (like virt-advisor-operator)
-    # No custom config needed - Kind works with Podman out of the box
     kind create cluster \
         --name "$CLUSTER_NAME" \
         --image "kindest/node:${KUBERNETES_VERSION}"
@@ -129,15 +127,15 @@ status() {
 
 # Function to install CRDs (for HCO and other dependencies)
 install_crds() {
-    echo "Installing CRDs from internal/assets/crds/"
+    echo "Installing CRDs from assets/crds/"
 
-    if [ ! -d "internal/assets/crds" ]; then
+    if [ ! -d "assets/crds" ]; then
         echo "ERROR: CRD directory not found. Run 'make update-crds' first."
         exit 1
     fi
 
     # Install all CRDs from the crds directory
-    for crd_file in internal/assets/crds/**/*.yaml; do
+    for crd_file in assets/crds/**/*.yaml; do
         if [ -f "$crd_file" ] && [ "$(basename "$crd_file")" != "README.md" ]; then
             echo "Installing CRD: $crd_file"
             kubectl apply -f "$crd_file" --context "kind-$CLUSTER_NAME" || true
