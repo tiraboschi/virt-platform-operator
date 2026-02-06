@@ -135,7 +135,7 @@ undeploy-local: ## Undeploy operator from Kind cluster
 
 .PHONY: logs-local
 logs-local: ## Tail operator logs from Kind cluster
-	kubectl logs -f -n virt-platform-operator-system \
+	kubectl logs -f -n openshift-cnv \
 		-l app=virt-platform-operator \
 		--context kind-$(CLUSTER_NAME) \
 		--tail=100
@@ -150,7 +150,7 @@ debug-local: ## Show debugging info for local deployment
 	kubectl cluster-info --context kind-$(CLUSTER_NAME)
 	@echo ""
 	@echo "=== Operator Pods ==="
-	kubectl get pods -n virt-platform-operator-system --context kind-$(CLUSTER_NAME)
+	kubectl get pods -n openshift-cnv --context kind-$(CLUSTER_NAME)
 	@echo ""
 	@echo "=== HyperConverged CR ==="
 	kubectl get hyperconverged -n openshift-cnv --context kind-$(CLUSTER_NAME) -o wide
