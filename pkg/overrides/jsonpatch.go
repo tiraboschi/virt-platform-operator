@@ -25,72 +25,67 @@ import (
 )
 
 const (
-	// AnnotationPatch is the annotation key for RFC 6902 JSON Patch
-	AnnotationPatch = "platform.kubevirt.io/patch"
+	// PatchAnnotation is the annotation key for RFC 6902 JSON Patch
+	PatchAnnotation = "platform.kubevirt.io/patch"
 )
 
-// ApplyJSONPatch applies a JSON Patch from annotation to an unstructured object
-// Returns the patched object or the original if no patch annotation exists
-func ApplyJSONPatch(obj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+// ApplyJSONPatch applies a RFC 6902 JSON Patch from the object's annotation
+// The patch is applied in-memory to the provided object
+// Returns true if a patch was applied, false if no patch annotation exists
+func ApplyJSONPatch(obj *unstructured.Unstructured) (bool, error) {
 	if obj == nil {
-		return nil, fmt.Errorf("object is nil")
+		return false, fmt.Errorf("object is nil")
 	}
 
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		return obj, nil
+		return false, nil
 	}
 
-	patchStr, exists := annotations[AnnotationPatch]
+	patchStr, exists := annotations[PatchAnnotation]
 	if !exists || patchStr == "" {
-		return obj, nil
+		return false, nil
 	}
 
-	// Validate patch is valid JSON
-	if !json.Valid([]byte(patchStr)) {
-		return nil, fmt.Errorf("invalid JSON in patch annotation: %s", patchStr)
-	}
-
-	// Convert object to JSON
-	objJSON, err := json.Marshal(obj.Object)
+	// Marshal current object to JSON
+	originalJSON, err := json.Marshal(obj.Object)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal object: %w", err)
+		return false, fmt.Errorf("failed to marshal object to JSON: %w", err)
 	}
 
 	// Parse the patch
 	patch, err := jsonpatch.DecodePatch([]byte(patchStr))
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode JSON patch: %w", err)
+		return false, fmt.Errorf("invalid JSON Patch in annotation: %w", err)
 	}
 
 	// Apply the patch
-	patchedJSON, err := patch.Apply(objJSON)
+	patchedJSON, err := patch.Apply(originalJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to apply JSON patch: %w", err)
+		return false, fmt.Errorf("failed to apply JSON Patch: %w", err)
 	}
 
-	// Unmarshal back to unstructured
-	patchedObj := &unstructured.Unstructured{}
-	if err := json.Unmarshal(patchedJSON, &patchedObj.Object); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal patched object: %w", err)
+	// Unmarshal back into the object
+	var patchedObj map[string]interface{}
+	if err := json.Unmarshal(patchedJSON, &patchedObj); err != nil {
+		return false, fmt.Errorf("failed to unmarshal patched JSON: %w", err)
 	}
 
-	return patchedObj, nil
+	// Update the object in-place
+	obj.Object = patchedObj
+
+	return true, nil
 }
 
-// ValidatePatch validates a JSON Patch string
-func ValidatePatch(patchStr string) error {
+// ValidateJSONPatch validates that a JSON Patch string is valid RFC 6902 format
+func ValidateJSONPatch(patchStr string) error {
 	if patchStr == "" {
 		return nil
 	}
 
-	if !json.Valid([]byte(patchStr)) {
-		return fmt.Errorf("patch is not valid JSON")
-	}
-
 	_, err := jsonpatch.DecodePatch([]byte(patchStr))
 	if err != nil {
-		return fmt.Errorf("invalid JSON patch format: %w", err)
+		return fmt.Errorf("invalid JSON Patch: %w", err)
 	}
 
 	return nil
