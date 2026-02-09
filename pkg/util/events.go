@@ -17,70 +17,154 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 )
 
-// Event reasons
+// Event types for the operator
 const (
-	EventReasonReconciliationSucceeded = "ReconciliationSucceeded"
-	EventReasonReconciliationFailed    = "ReconciliationFailed"
-	EventReasonAssetApplied            = "AssetApplied"
-	EventReasonAssetSkipped            = "AssetSkipped"
-	EventReasonInvalidPatch            = "InvalidPatch"
-	EventReasonInvalidIgnoreFields     = "InvalidIgnoreFields"
-	EventReasonPatchBlocked            = "PatchBlocked"
-	EventReasonThrashingDetected       = "ThrashingDetected"
-	EventReasonCRDMissing              = "CRDMissing"
-	EventReasonDriftDetected           = "DriftDetected"
+	// EventTypeNormal represents normal, informational events
+	EventTypeNormal = corev1.EventTypeNormal
+
+	// EventTypeWarning represents warning events that may require attention
+	EventTypeWarning = corev1.EventTypeWarning
 )
 
-// RecordReconciliationSucceeded records a successful reconciliation event
-func RecordReconciliationSucceeded(recorder record.EventRecorder, obj runtime.Object, message string) {
-	recorder.Event(obj, "Normal", EventReasonReconciliationSucceeded, message)
+// Event reasons - these appear in kubectl get events
+const (
+	// Successful operations
+	EventReasonAssetApplied       = "AssetApplied"
+	EventReasonDriftCorrected     = "DriftCorrected"
+	EventReasonPatchApplied       = "PatchApplied"
+	EventReasonReconcileSucceeded = "ReconcileSucceeded"
+	EventReasonCRDDiscovered      = "CRDDiscovered"
+
+	// Informational events
+	EventReasonAssetSkipped    = "AssetSkipped"
+	EventReasonNoDriftDetected = "NoDriftDetected"
+	EventReasonUnmanagedMode   = "UnmanagedMode"
+
+	// Warning events
+	EventReasonDriftDetected       = "DriftDetected"
+	EventReasonThrottled           = "Throttled"
+	EventReasonInvalidPatch        = "InvalidPatch"
+	EventReasonInvalidIgnoreFields = "InvalidIgnoreFields"
+	EventReasonCRDMissing          = "CRDMissing"
+	EventReasonApplyFailed         = "ApplyFailed"
+	EventReasonRenderFailed        = "RenderFailed"
+)
+
+// EventRecorder wraps the Kubernetes event recorder with helper methods
+type EventRecorder struct {
+	recorder record.EventRecorder
 }
 
-// RecordReconciliationFailed records a failed reconciliation event
-func RecordReconciliationFailed(recorder record.EventRecorder, obj runtime.Object, err error) {
-	recorder.Event(obj, "Warning", EventReasonReconciliationFailed, err.Error())
+// NewEventRecorder creates a new event recorder
+func NewEventRecorder(recorder record.EventRecorder) *EventRecorder {
+	return &EventRecorder{
+		recorder: recorder,
+	}
 }
 
-// RecordAssetApplied records an asset application event
-func RecordAssetApplied(recorder record.EventRecorder, obj runtime.Object, assetName string) {
-	recorder.Eventf(obj, "Normal", EventReasonAssetApplied, "Applied asset: %s", assetName)
+// AssetApplied records that an asset was successfully applied
+func (e *EventRecorder) AssetApplied(object runtime.Object, assetName, kind, namespace, name string) {
+	msg := fmt.Sprintf("Applied asset %s: %s/%s/%s", assetName, kind, namespace, name)
+	e.recorder.Event(object, EventTypeNormal, EventReasonAssetApplied, msg)
 }
 
-// RecordAssetSkipped records an asset skip event
-func RecordAssetSkipped(recorder record.EventRecorder, obj runtime.Object, assetName, reason string) {
-	recorder.Eventf(obj, "Normal", EventReasonAssetSkipped, "Skipped asset %s: %s", assetName, reason)
+// DriftCorrected records that drift was detected and corrected
+func (e *EventRecorder) DriftCorrected(object runtime.Object, kind, namespace, name string) {
+	msg := fmt.Sprintf("Corrected drift for %s/%s/%s", kind, namespace, name)
+	e.recorder.Event(object, EventTypeNormal, EventReasonDriftCorrected, msg)
 }
 
-// RecordInvalidPatch records an invalid patch event
-func RecordInvalidPatch(recorder record.EventRecorder, obj runtime.Object, err error) {
-	recorder.Eventf(obj, "Warning", EventReasonInvalidPatch, "Invalid JSON patch: %v", err)
+// DriftDetected records that drift was detected (warning)
+func (e *EventRecorder) DriftDetected(object runtime.Object, kind, namespace, name string) {
+	msg := fmt.Sprintf("Drift detected for %s/%s/%s", kind, namespace, name)
+	e.recorder.Event(object, EventTypeWarning, EventReasonDriftDetected, msg)
 }
 
-// RecordInvalidIgnoreFields records an invalid ignore-fields event
-func RecordInvalidIgnoreFields(recorder record.EventRecorder, obj runtime.Object, err error) {
-	recorder.Eventf(obj, "Warning", EventReasonInvalidIgnoreFields, "Invalid ignore-fields annotation: %v", err)
+// PatchApplied records that a user JSON patch was applied
+func (e *EventRecorder) PatchApplied(object runtime.Object, kind, namespace, name string, operations int) {
+	msg := fmt.Sprintf("Applied %d JSON patch operation(s) to %s/%s/%s", operations, kind, namespace, name)
+	e.recorder.Event(object, EventTypeNormal, EventReasonPatchApplied, msg)
 }
 
-// RecordPatchBlocked records a blocked patch event
-func RecordPatchBlocked(recorder record.EventRecorder, obj runtime.Object, kind string) {
-	recorder.Eventf(obj, "Warning", EventReasonPatchBlocked, "JSON patch blocked on sensitive resource: %s", kind)
+// InvalidPatch records that a user's JSON patch was invalid
+func (e *EventRecorder) InvalidPatch(object runtime.Object, kind, namespace, name, reason string) {
+	msg := fmt.Sprintf("Invalid JSON patch for %s/%s/%s: %s", kind, namespace, name, reason)
+	e.recorder.Event(object, EventTypeWarning, EventReasonInvalidPatch, msg)
 }
 
-// RecordThrashingDetected records a thrashing detection event
-func RecordThrashingDetected(recorder record.EventRecorder, obj runtime.Object, resourceKey string) {
-	recorder.Eventf(obj, "Warning", EventReasonThrashingDetected, "Update throttled for resource: %s", resourceKey)
+// InvalidIgnoreFields records that ignore-fields annotation was invalid
+func (e *EventRecorder) InvalidIgnoreFields(object runtime.Object, kind, namespace, name, reason string) {
+	msg := fmt.Sprintf("Invalid ignore-fields annotation for %s/%s/%s: %s", kind, namespace, name, reason)
+	e.recorder.Event(object, EventTypeWarning, EventReasonInvalidIgnoreFields, msg)
 }
 
-// RecordCRDMissing records a missing CRD event
-func RecordCRDMissing(recorder record.EventRecorder, obj runtime.Object, crdName string) {
-	recorder.Eventf(obj, "Warning", EventReasonCRDMissing, "CRD not found, skipping asset: %s", crdName)
+// Throttled records that an update was throttled (anti-thrashing)
+func (e *EventRecorder) Throttled(object runtime.Object, kind, namespace, name string, capacity int, window string) {
+	msg := fmt.Sprintf("Update throttled for %s/%s/%s (limit: %d updates per %s)", kind, namespace, name, capacity, window)
+	e.recorder.Event(object, EventTypeWarning, EventReasonThrottled, msg)
 }
 
-// RecordDriftDetected records a drift detection event
-func RecordDriftDetected(recorder record.EventRecorder, obj runtime.Object, resourceName string) {
-	recorder.Eventf(obj, "Normal", EventReasonDriftDetected, "Configuration drift detected: %s", resourceName)
+// AssetSkipped records that an asset was skipped (conditions not met)
+func (e *EventRecorder) AssetSkipped(object runtime.Object, assetName, reason string) {
+	msg := fmt.Sprintf("Skipped asset %s: %s", assetName, reason)
+	e.recorder.Event(object, EventTypeNormal, EventReasonAssetSkipped, msg)
+}
+
+// UnmanagedMode records that a resource is in unmanaged mode
+func (e *EventRecorder) UnmanagedMode(object runtime.Object, kind, namespace, name string) {
+	msg := fmt.Sprintf("Resource %s/%s/%s is in unmanaged mode, skipping reconciliation", kind, namespace, name)
+	e.recorder.Event(object, EventTypeNormal, EventReasonUnmanagedMode, msg)
+}
+
+// CRDMissing records that a required CRD is missing (soft dependency)
+func (e *EventRecorder) CRDMissing(object runtime.Object, component, crdName string) {
+	msg := fmt.Sprintf("CRD %s not installed, skipping %s assets (soft dependency)", crdName, component)
+	e.recorder.Event(object, EventTypeWarning, EventReasonCRDMissing, msg)
+}
+
+// CRDDiscovered records that a previously missing CRD was discovered
+func (e *EventRecorder) CRDDiscovered(object runtime.Object, component, crdName string) {
+	msg := fmt.Sprintf("CRD %s discovered, %s assets can now be reconciled", crdName, component)
+	e.recorder.Event(object, EventTypeNormal, EventReasonCRDDiscovered, msg)
+}
+
+// ApplyFailed records that applying an asset failed
+func (e *EventRecorder) ApplyFailed(object runtime.Object, assetName, reason string) {
+	msg := fmt.Sprintf("Failed to apply asset %s: %s", assetName, reason)
+	e.recorder.Event(object, EventTypeWarning, EventReasonApplyFailed, msg)
+}
+
+// RenderFailed records that rendering an asset template failed
+func (e *EventRecorder) RenderFailed(object runtime.Object, assetName, reason string) {
+	msg := fmt.Sprintf("Failed to render asset %s: %s", assetName, reason)
+	e.recorder.Event(object, EventTypeWarning, EventReasonRenderFailed, msg)
+}
+
+// ReconcileSucceeded records successful reconciliation
+func (e *EventRecorder) ReconcileSucceeded(object runtime.Object, appliedCount, totalCount int) {
+	msg := fmt.Sprintf("Reconciliation succeeded: %d/%d assets applied", appliedCount, totalCount)
+	e.recorder.Event(object, EventTypeNormal, EventReasonReconcileSucceeded, msg)
+}
+
+// NoDriftDetected records that no drift was detected (informational)
+func (e *EventRecorder) NoDriftDetected(object runtime.Object, kind, namespace, name string) {
+	msg := fmt.Sprintf("No drift detected for %s/%s/%s", kind, namespace, name)
+	e.recorder.Event(object, EventTypeNormal, EventReasonNoDriftDetected, msg)
+}
+
+// Eventf records a formatted event
+func (e *EventRecorder) Eventf(object runtime.Object, eventType, reason, messageFmt string, args ...interface{}) {
+	e.recorder.Eventf(object, eventType, reason, messageFmt, args...)
+}
+
+// AnnotatedEventf records an event with annotations
+func (e *EventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventType, reason, messageFmt string, args ...interface{}) {
+	e.recorder.AnnotatedEventf(object, annotations, eventType, reason, messageFmt, args...)
 }
