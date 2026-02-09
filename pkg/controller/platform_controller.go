@@ -72,9 +72,11 @@ type PlatformReconciler struct {
 	contextBuilder     *RenderContextBuilder
 	conditionEvaluator *assets.DefaultConditionEvaluator
 	crdChecker         *util.CRDChecker
+	eventRecorder      *util.EventRecorder
 }
 
 // NewPlatformReconciler creates a new platform reconciler
+// The event recorder will be set automatically by SetupWithManager()
 func NewPlatformReconciler(c client.Client, namespace string) (*PlatformReconciler, error) {
 	loader := assets.NewLoader()
 
@@ -93,6 +95,15 @@ func NewPlatformReconciler(c client.Client, namespace string) (*PlatformReconcil
 		conditionEvaluator: &assets.DefaultConditionEvaluator{},
 		crdChecker:         util.NewCRDChecker(c),
 	}, nil
+}
+
+// SetEventRecorder sets the event recorder for this reconciler
+func (r *PlatformReconciler) SetEventRecorder(recorder *util.EventRecorder) {
+	r.eventRecorder = recorder
+	// Also set it on the patcher so it can emit events during reconciliation
+	if r.patcher != nil {
+		r.patcher.SetEventRecorder(recorder)
+	}
 }
 
 // Reconcile reconciles the virt platform
@@ -216,6 +227,10 @@ func (r *PlatformReconciler) reconcileAssets(ctx context.Context, renderCtx *pkg
 					"component", asset.Component,
 					"crd", crdName,
 				)
+				// Record event about missing CRD (only once per reconciliation to avoid spam)
+				if r.eventRecorder != nil {
+					r.eventRecorder.CRDMissing(renderCtx.HCO, asset.Component, crdName)
+				}
 				continue
 			}
 		}
@@ -233,6 +248,10 @@ func (r *PlatformReconciler) reconcileAssets(ctx context.Context, renderCtx *pkg
 			logger.V(1).Info("Asset conditions not met, skipping",
 				"asset", asset.Name,
 			)
+			// Optionally record event (commented out to avoid spam for opt-in assets)
+			// if r.eventRecorder != nil {
+			// 	r.eventRecorder.AssetSkipped(renderCtx.HCO, asset.Name, "conditions not met")
+			// }
 			continue
 		}
 
@@ -245,6 +264,11 @@ func (r *PlatformReconciler) reconcileAssets(ctx context.Context, renderCtx *pkg
 		"total", len(assetsToReconcile),
 		"applied", appliedCount,
 	)
+
+	// Record reconciliation event
+	if r.eventRecorder != nil && err == nil {
+		r.eventRecorder.ReconcileSucceeded(renderCtx.HCO, appliedCount, len(assetsToReconcile))
+	}
 
 	return err
 }

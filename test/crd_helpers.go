@@ -81,12 +81,7 @@ func installCRDFile(ctx context.Context, c client.Client, filePath string) error
 		// CRD exists - check if it's being deleted
 		if existing.DeletionTimestamp != nil {
 			// CRD is being deleted, wait for it to be fully removed
-			err := wait.PollUntilContextTimeout(ctx, 250*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
-				checkCRD := &apiextensionsv1.CustomResourceDefinition{}
-				err := c.Get(ctx, key, checkCRD)
-				// CRD is gone when we get NotFound error
-				return err != nil, nil
-			})
+			err := waitForCRDDeletion(ctx, c, crdName)
 			if err != nil {
 				return fmt.Errorf("timeout waiting for CRD %s to be deleted: %w", crdName, err)
 			}
@@ -127,8 +122,29 @@ func waitForCRDEstablished(ctx context.Context, c client.Client, crdName string)
 	})
 }
 
+// waitForCRDDeletion waits for a CRD to be fully deleted from the cluster
+func waitForCRDDeletion(ctx context.Context, c client.Client, crdName string) error {
+	return wait.PollUntilContextTimeout(ctx, 250*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		key := client.ObjectKey{Name: crdName}
+		err := c.Get(ctx, key, crd)
+		// CRD is fully deleted when we get a NotFound error
+		// Return true to stop polling when the CRD is gone
+		if err != nil {
+			// Check if it's a NotFound error (expected) or some other error
+			if client.IgnoreNotFound(err) == nil {
+				return true, nil // CRD is deleted
+			}
+			return false, err // Some other error occurred
+		}
+		// CRD still exists
+		return false, nil
+	})
+}
+
 // UninstallCRDs removes a CRD set (useful for testing missing CRD scenarios)
 // This function is idempotent - it's safe to call multiple times
+// It waits for CRDs to be fully deleted before returning to avoid race conditions
 func UninstallCRDs(ctx context.Context, c client.Client, crdSet CRDSet) error {
 	crdDir := filepath.Join("..", "assets", "crds", string(crdSet))
 	files, err := filepath.Glob(filepath.Join(crdDir, "*.yaml"))
@@ -136,6 +152,10 @@ func UninstallCRDs(ctx context.Context, c client.Client, crdSet CRDSet) error {
 		return fmt.Errorf("failed to list CRD files: %w", err)
 	}
 
+	// Track CRD names to wait for deletion
+	var crdNames []string
+
+	// First, initiate deletion for all CRDs
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
@@ -147,8 +167,18 @@ func UninstallCRDs(ctx context.Context, c client.Client, crdSet CRDSet) error {
 			continue
 		}
 
+		if obj.GetKind() == "CustomResourceDefinition" {
+			crdNames = append(crdNames, obj.GetName())
+		}
+
 		// Delete the CRD (ignore errors if already deleted)
 		_ = c.Delete(ctx, obj)
+	}
+
+	// Wait for all CRDs to be fully deleted
+	for _, crdName := range crdNames {
+		// Ignore errors from waiting - CRD might already be deleted
+		_ = waitForCRDDeletion(ctx, c, crdName)
 	}
 
 	return nil

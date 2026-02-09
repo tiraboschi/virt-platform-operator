@@ -29,6 +29,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/kubevirt/virt-platform-operator/pkg/controller"
+	"github.com/kubevirt/virt-platform-operator/pkg/util"
 )
 
 var (
@@ -82,6 +83,12 @@ func main() {
 		setupLog.Error(err, "unable to create platform reconciler")
 		os.Exit(1)
 	}
+
+	// Setup event recorder
+	eventRecorder := util.NewEventRecorder(
+		mgr.GetEventRecorderFor("virt-platform-operator"),
+	)
+	reconciler.SetEventRecorder(eventRecorder)
 
 	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to setup platform controller")

@@ -18,6 +18,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +30,7 @@ import (
 	pkgcontext "github.com/kubevirt/virt-platform-operator/pkg/context"
 	"github.com/kubevirt/virt-platform-operator/pkg/overrides"
 	"github.com/kubevirt/virt-platform-operator/pkg/throttling"
+	"github.com/kubevirt/virt-platform-operator/pkg/util"
 )
 
 // Patcher implements the Patched Baseline algorithm
@@ -38,6 +40,7 @@ type Patcher struct {
 	driftDetector *DriftDetector
 	throttle      *throttling.TokenBucket
 	client        client.Client
+	eventRecorder *util.EventRecorder
 }
 
 // NewPatcher creates a new patcher
@@ -51,8 +54,15 @@ func NewPatcher(c client.Client, loader *assets.Loader) *Patcher {
 	}
 }
 
+// SetEventRecorder sets the event recorder for this patcher
+func (p *Patcher) SetEventRecorder(recorder *util.EventRecorder) {
+	p.eventRecorder = recorder
+}
+
 // ReconcileAsset performs the full Patched Baseline algorithm for an asset
 // Returns true if the asset was applied, false if skipped/unchanged
+//
+//nolint:gocognit // This function implements the 7-step Patched Baseline Algorithm which is inherently complex
 func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMetadata, renderCtx *pkgcontext.RenderContext) (bool, error) {
 	logger := log.FromContext(ctx)
 
@@ -99,6 +109,10 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 			"namespace", desired.GetNamespace(),
 			"objectName", desired.GetName(),
 		)
+		// Record event about unmanaged mode
+		if p.eventRecorder != nil && renderCtx.HCO != nil {
+			p.eventRecorder.UnmanagedMode(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName())
+		}
 		return false, nil
 	}
 
@@ -116,12 +130,21 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 			desired.SetAnnotations(desiredAnnotations)
 
 			// Apply the patch (modifies desired in-place)
-			_, err = overrides.ApplyJSONPatch(desired)
+			patched, err := overrides.ApplyJSONPatch(desired)
 			if err != nil {
 				logger.Error(err, "Failed to apply JSON patch, using desired without patch",
 					"name", assetMeta.Name,
 				)
+				// Record event about invalid patch
+				if p.eventRecorder != nil && renderCtx.HCO != nil {
+					p.eventRecorder.InvalidPatch(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName(), err.Error())
+				}
 				// Continue with unpatched desired (don't fail reconciliation)
+			} else if patched && p.eventRecorder != nil && renderCtx.HCO != nil {
+				// Record successful patch application
+				// Count operations in the patch string
+				operations := countJSONPatchOperations(patchStr)
+				p.eventRecorder.PatchApplied(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName(), operations)
 			}
 		}
 	}
@@ -154,7 +177,16 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 		logger.V(1).Info("No drift detected, skipping apply",
 			"name", assetMeta.Name,
 		)
+		// Optionally record no-drift event (commented to avoid spam)
+		// if p.eventRecorder != nil && renderCtx.HCO != nil {
+		// 	p.eventRecorder.NoDriftDetected(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName())
+		// }
 		return false, nil
+	}
+
+	// Record drift detection (only when drift is found)
+	if liveExists && p.eventRecorder != nil && renderCtx.HCO != nil {
+		p.eventRecorder.DriftDetected(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName())
 	}
 
 	// Step 6: Anti-thrashing gate
@@ -170,6 +202,12 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 				"name", assetMeta.Name,
 				"key", resourceKey,
 			)
+			// Record throttling event
+			if p.eventRecorder != nil && renderCtx.HCO != nil {
+				throttledErr := err.(*throttling.ThrottledError)
+				window := throttledErr.Window.String()
+				p.eventRecorder.Throttled(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName(), throttledErr.Capacity, window)
+			}
 			return false, err
 		}
 		return false, err
@@ -178,6 +216,10 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 	// Step 7: Apply via Server-Side Apply
 	applied, err := p.applier.Apply(ctx, desired, true)
 	if err != nil {
+		// Record apply failure event
+		if p.eventRecorder != nil && renderCtx.HCO != nil {
+			p.eventRecorder.ApplyFailed(renderCtx.HCO, assetMeta.Name, err.Error())
+		}
 		return false, fmt.Errorf("failed to apply asset %s: %w", assetMeta.Name, err)
 	}
 
@@ -188,6 +230,14 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 			"namespace", desired.GetNamespace(),
 			"objectName", desired.GetName(),
 		)
+		// Record successful asset application
+		if p.eventRecorder != nil && renderCtx.HCO != nil {
+			p.eventRecorder.AssetApplied(renderCtx.HCO, assetMeta.Name, desired.GetKind(), desired.GetNamespace(), desired.GetName())
+		}
+		// Also record drift correction since we just fixed it
+		if liveExists && p.eventRecorder != nil && renderCtx.HCO != nil {
+			p.eventRecorder.DriftCorrected(renderCtx.HCO, desired.GetKind(), desired.GetNamespace(), desired.GetName())
+		}
 	}
 
 	return applied, nil
@@ -215,4 +265,14 @@ func (p *Patcher) ReconcileAssets(ctx context.Context, assetMetas []assets.Asset
 	}
 
 	return appliedCount, lastErr
+}
+
+// countJSONPatchOperations counts the number of operations in a JSON patch string
+// Returns the count or 0 if parsing fails
+func countJSONPatchOperations(patchStr string) int {
+	var patch []map[string]interface{}
+	if err := json.Unmarshal([]byte(patchStr), &patch); err != nil {
+		return 0
+	}
+	return len(patch)
 }
