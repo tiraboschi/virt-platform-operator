@@ -103,13 +103,26 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 	}
 
 	// Step 3: Apply user patch (in-memory) → Modified State
+	// Copy patch annotation from live to desired, then apply it
 	if liveExists {
-		desired, err = overrides.ApplyJSONPatch(live)
-		if err != nil {
-			logger.Error(err, "Failed to apply JSON patch, using desired without patch",
-				"name", assetMeta.Name,
-			)
-			// Continue with unpatch desired (don't fail reconciliation)
+		liveAnnotations := live.GetAnnotations()
+		if patchStr, exists := liveAnnotations[overrides.PatchAnnotation]; exists && patchStr != "" {
+			// Copy patch annotation to desired temporarily
+			desiredAnnotations := desired.GetAnnotations()
+			if desiredAnnotations == nil {
+				desiredAnnotations = make(map[string]string)
+			}
+			desiredAnnotations[overrides.PatchAnnotation] = patchStr
+			desired.SetAnnotations(desiredAnnotations)
+
+			// Apply the patch (modifies desired in-place)
+			_, err = overrides.ApplyJSONPatch(desired)
+			if err != nil {
+				logger.Error(err, "Failed to apply JSON patch, using desired without patch",
+					"name", assetMeta.Name,
+				)
+				// Continue with unpatched desired (don't fail reconciliation)
+			}
 		}
 	}
 

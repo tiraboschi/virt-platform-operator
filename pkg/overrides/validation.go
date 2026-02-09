@@ -50,7 +50,7 @@ func ValidatePatchSecurity(obj *unstructured.Unstructured) error {
 	if sensitiveKinds[kind] {
 		annotations := obj.GetAnnotations()
 		if annotations != nil {
-			if _, hasPatch := annotations[AnnotationPatch]; hasPatch {
+			if _, hasPatch := annotations[PatchAnnotation]; hasPatch {
 				return fmt.Errorf("JSON patches are not allowed on sensitive resource kind: %s", kind)
 			}
 		}
@@ -86,8 +86,8 @@ func ValidateAnnotations(obj *unstructured.Unstructured) error {
 	}
 
 	// Validate patch annotation
-	if patchStr, exists := annotations[AnnotationPatch]; exists {
-		if err := ValidatePatch(patchStr); err != nil {
+	if patchStr, exists := annotations[PatchAnnotation]; exists {
+		if err := ValidateJSONPatch(patchStr); err != nil {
 			return fmt.Errorf("invalid patch annotation: %w", err)
 		}
 
