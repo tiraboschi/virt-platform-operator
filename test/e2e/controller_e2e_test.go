@@ -120,18 +120,6 @@ var _ = Describe("Controller E2E Tests", func() {
 		})
 	})
 
-	Context("Real-Time Drift Detection", func() {
-		It("should detect and correct drift on managed resources immediately", func() {
-			Skip("Requires managed resource CRDs to be installed (e.g., MachineConfig)")
-			// This test would:
-			// 1. Create a managed resource (e.g., MachineConfig)
-			// 2. Verify it gets labeled by operator
-			// 3. Modify the resource (simulate drift)
-			// 4. Verify operator detects and corrects drift within seconds (not minutes)
-			// 5. Check that watch triggered reconciliation (not periodic sync)
-		})
-	})
-
 	Context("Dynamic Watch Configuration", func() {
 		It("should only watch CRDs that are installed", func() {
 			By("checking operator logs for watch configuration")
