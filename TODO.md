@@ -190,32 +190,47 @@ This document tracks implementation progress against the original plan in `claud
 
 ---
 
-## Phase 4: Build Tooling & Testing (Week 6+) - NOT STARTED
+## Phase 4: Build Tooling & Testing (Week 6+) - MOSTLY COMPLETE
 
-### ❌ RBAC Generation Tool
+### ⏳ RBAC Generation Tool (Next Priority)
 
-**Status**: Not implemented. Role.yaml manually maintained (plan lines 712-717).
+**Status**: Not implemented. Role.yaml currently manually maintained (plan lines 712-717).
 
 **Required**: cmd/rbac-gen/main.go
 - [ ] Walk assets/ directory (exclude assets/crds/)
 - [ ] Parse YAML/templates (replace {{ }} with dummy values)
 - [ ] Extract GVKs from parsed resources
 - [ ] Generate ClusterRole with exact permissions
-- [ ] Output to config/rbac/role.yaml with "DO NOT EDIT" header
+- [ ] Output to config/rbac/role.yaml with "AUTO-GENERATED - DO NOT EDIT" header
 - [ ] Integrate with Makefile (`make generate-rbac`)
+- [ ] CI validation - Ensure generated RBAC matches committed version
 
-**Current workaround**: Manually maintain config/rbac/role.yaml.
+**Why This Matters**:
+- Eliminates manual RBAC maintenance as assets are added
+- Ensures RBAC stays in sync with asset templates
+- Reduces risk of permission gaps or over-permissioning
+- Critical for scalability as asset library grows
 
-### ❌ CRD Management
+### ✅ CRD Management (COMPLETE!)
 
-**Status**: Manual CRD collection (plan lines 719-723).
+**Status**: ✅ Fully automated CRD collection and verification!
 
-**Required**: hack/update-crds.sh
-- [ ] Fetch CRDs from upstream repositories
-- [ ] Organize into assets/crds/ structure
-- [ ] Update assets/crds/README.md with versions and sources
-- [ ] Validate CRDs can be loaded by envtest
-- [ ] Makefile targets: `make update-crds`, `make verify-crds`
+**Implemented**: hack/update-crds.sh
+- [x] Fetch CRDs from upstream repositories (GitHub raw URLs)
+- [x] Organize into assets/crds/ structure (kubevirt, openshift, remediation, operators, observability, oadp)
+- [x] Update assets/crds/README.md with versions and sources (auto-generated)
+- [x] Validate CRDs can be loaded by envtest (test/crd_test.go)
+- [x] Makefile targets: `make update-crds`, `make verify-crds`
+- [x] CI workflow: `.github/workflows/verify-crds.yml`
+- [x] Verification mode: `hack/update-crds.sh --verify` (for CI)
+- [x] Safety: Fetch to temp, only overwrite on success
+- [x] CRD count tracking: 53 CRDs across 6 categories
+
+**Features**:
+- Automatic README generation with CRD sources and counts
+- Verification mode for CI (detects outdated CRDs)
+- Network failure resilience (keeps existing files if fetch fails)
+- Comprehensive CRD collection for all managed resource types
 
 ### ✅ Testing Infrastructure (CRITICAL)
 
@@ -460,13 +475,19 @@ All critical phases have been completed:
 4. ✅ Added integration tests for drift detection (covered in patcher tests)
 5. ✅ Achieved comprehensive coverage (99 tests total)
 
-### 🎯 Now (Current Focus): Build Tooling & Remaining Assets
-1. [ ] Implement cmd/rbac-gen/main.go (optional automation)
-2. [ ] Create hack/update-crds.sh (optional automation)
-3. [ ] Add remaining Phase 1 assets (PCI, NUMA, kubelet, MTV)
+### ✅ Then (Week 4): CI/CD & Code Quality
+1. ✅ Implemented hack/update-crds.sh (CRD automation)
+2. ✅ Added CI workflows (lint, test, e2e, verify-crds)
+3. ✅ Integrated shellcheck for shell script quality
+4. ✅ Standardized CI job naming
+5. ✅ Added fmt/vet to lint pipeline
+
+### 🎯 Now (Current Focus): Automation & Asset Expansion
+1. [ ] Implement cmd/rbac-gen/main.go (RBAC automation) - **Next Immediate Step**
+2. [ ] Add remaining Phase 1 assets (PCI, NUMA, kubelet, MTV)
+3. [ ] Write user documentation (user-guide, architecture, assets)
 4. [ ] Add Phase 2 assets (VFIO, AAQ, node-maintenance, fence-agents)
 5. [ ] Add Phase 3 assets (USB passthrough)
-6. [ ] Write user documentation
 
 ---
 
@@ -487,7 +508,7 @@ All critical phases have been completed:
 - [x] **Anti-thrashing protection working** ✅ **COMPLETE** (token bucket)
 - [x] **GitOps labeling and object adoption** ✅ **COMPLETE** (cache optimization)
 - [x] **Event recording for observability** ✅ **COMPLETE** (comprehensive)
-- [ ] Build-time RBAC generation from assets ⏳ **OPTIONAL**
+- [ ] Build-time RBAC generation from assets ⏳ **NEXT STEP**
 - [x] Soft dependency handling ✅ **COMPLETE** (CRD checker with caching)
 - [x] **>80% integration test coverage with envtest** ✅ **EXCEEDED** (30 integration tests, 0 flaky)
 
@@ -503,11 +524,20 @@ All critical phases have been completed:
 **Phase 1**: ✅ 100% complete (all core features implemented)
 **Phase 2**: ✅ 100% complete (user override system fully functional)
 **Phase 3**: ✅ 100% complete (safety, events, soft dependencies)
-**Phase 4**: ⏳ 75% complete (comprehensive tests ✅, docs ❌, RBAC gen ❌)
+**Phase 4**: ✅ 90% complete
+  - ✅ Comprehensive testing (295 tests, 0 flaky)
+  - ✅ CRD automation (update-crds, verify-crds)
+  - ✅ CI/CD infrastructure (lint, test, e2e, verify-crds)
+  - ✅ Shell script quality (shellcheck)
+  - ❌ Documentation (user guides, architecture)
+  - ⏳ RBAC generator (next immediate step)
 
-**Overall**: ~90% complete against original plan!
+**Overall**: ~92% complete against original plan!
 
-**Remaining work**: Asset expansion + user documentation
+**Remaining high-value work**:
+1. **RBAC automation** (next immediate step - unblocks asset development)
+2. **Asset expansion** (production readiness)
+3. **User documentation** (adoption enablement)
 
 ---
 
@@ -515,28 +545,73 @@ All critical phases have been completed:
 
 **Core platform is production-ready!** All critical features implemented and tested.
 
-### Recommended Next Steps:
+### Recommended Next Steps (Prioritized):
 
-1. **Add missing asset templates** (highest value)
-   - PCI passthrough, NUMA topology
-   - Kubelet performance settings
-   - MTV operator CR
-   - CPU manager (opt-in)
+#### 1. **RBAC Generation Tool** (Next Immediate Step - Automation)
+**Goal**: Eliminate manual RBAC maintenance and ensure permissions stay in sync with assets.
 
-2. **Write user documentation**
-   - How to use annotation-based customization
-   - Examples and security considerations
-   - Architecture explanation
+**Implementation**: `cmd/rbac-gen/main.go`
+- [ ] Asset scanner - Walk assets/ directory (exclude assets/crds/)
+- [ ] Template parser - Handle .yaml.tpl files, replace {{ }} with dummy values for parsing
+- [ ] GVK extractor - Parse YAML and extract GroupVersionKind from all resources
+- [ ] ClusterRole generator - Create role with exact permissions for all discovered GVKs
+- [ ] Auto-updater - Output to config/rbac/role.yaml with "AUTO-GENERATED - DO NOT EDIT" header
+- [ ] Makefile integration - Add `make generate-rbac` target
+- [ ] CI validation - Ensure generated RBAC matches committed version
 
-3. **Optional enhancements**
-   - RBAC generation tool (automation)
-   - CRD update script (automation)
-   - Additional Phase 2/3 assets
+**Why Now**:
+- Asset library is growing (currently 8 assets, more planned)
+- Manual RBAC maintenance doesn't scale
+- Risk of permission gaps as new assets are added
+- Automation enables faster asset development
 
-The platform now has all differentiating features:
+#### 2. **Add missing asset templates** (Production Readiness)
+**Phase 1 Always-On** (Missing 4/8):
+- [ ] `assets/machine-config/02-pci-passthrough.yaml.tpl` - IOMMU for PCI passthrough
+- [ ] `assets/machine-config/03-numa.yaml.tpl` - NUMA topology configuration
+- [ ] `assets/kubelet/perf-settings.yaml.tpl` - nodeStatusMaxImages, maxPods tuning
+- [ ] `assets/operators/mtv.yaml.tpl` - Migration Toolkit for Virtualization
+
+**Phase 1 Opt-In** (Missing 1/2):
+- [ ] `assets/kubelet/cpu-manager.yaml.tpl` - CPU manager for guaranteed CPU
+
+**Phase 2** (All missing):
+- [ ] `assets/machine-config/04-vfio-assign.yaml.tpl` - VFIO device assignment
+- [ ] `assets/operators/aaq.yaml.tpl` - Application Aware Quota
+- [ ] `assets/operators/node-maintenance.yaml.tpl` - Node maintenance operator
+- [ ] `assets/operators/fence-agents.yaml.tpl` - Fence agents remediation
+
+**Phase 3**:
+- [ ] `assets/machine-config/05-usb-passthrough.yaml.tpl` - USB passthrough
+
+#### 3. **Write user documentation** (User Adoption)
+- [ ] `README.md` - Project overview, quick start, architecture summary
+- [ ] `docs/user-guide.md` - Annotation-based customization guide
+  - How to use `platform.kubevirt.io/patch`
+  - How to use `platform.kubevirt.io/ignore-fields`
+  - How to use `platform.kubevirt.io/mode: unmanaged`
+  - Security considerations and limitations
+- [ ] `docs/architecture.md` - Deep dive into Patched Baseline algorithm
+  - Algorithm flow diagram
+  - Reconciliation order explanation
+  - HCO dual role (managed resource + config source)
+- [ ] `docs/assets.md` - Asset catalog reference
+  - All managed assets with descriptions
+  - Conditions for each asset (hardware, feature gates, annotations)
+  - Template variables available
+
+### Why This Priority Order?
+
+1. **RBAC automation** (next immediate step) - Unblocks faster asset development
+2. **Asset templates** - Enable production use cases (virtualization at scale)
+3. **Documentation** - Enable user adoption and customization
+
+The platform now has all core differentiating features:
 - ✅ Annotation-based user control (Zero API Surface)
 - ✅ Anti-thrashing protection
 - ✅ Complete Patched Baseline algorithm
 - ✅ GitOps best practices (labeling, adoption)
 - ✅ Comprehensive observability (events)
-- ✅ Production-ready quality (99 tests, 0 flaky)
+- ✅ Production-ready quality (295 tests, 0 flaky)
+- ✅ Automated CRD management
+- ✅ CI/CD infrastructure with code quality gates
