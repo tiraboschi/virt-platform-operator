@@ -41,9 +41,9 @@ func TestIntegration(t *testing.T) {
 	// Set generous timeouts for CI environments with rate limiting
 	// CRD operations can take a long time when rate limited
 	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(1 * time.Second)
-	SetDefaultConsistentlyDuration(10 * time.Second)
-	SetDefaultConsistentlyPollingInterval(1 * time.Second)
+	SetDefaultEventuallyPollingInterval(20 * time.Millisecond) // Fast polling
+	SetDefaultConsistentlyDuration(5 * time.Second)
+	SetDefaultConsistentlyPollingInterval(20 * time.Millisecond) // Fast polling
 
 	RunSpecs(t, "Integration Test Suite")
 }
@@ -73,8 +73,8 @@ var _ = BeforeSuite(func() {
 	// Increase rate limits for CI environments
 	// Default QPS=5, Burst=10 is too restrictive for CRD operations in tests
 	// These values allow for more frequent API calls without hitting rate limiter
-	cfg.QPS = 50
-	cfg.Burst = 100
+	cfg.QPS = 100
+	cfg.Burst = 200
 
 	// Create client
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
