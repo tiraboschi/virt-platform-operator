@@ -12,6 +12,8 @@ import (
 )
 
 var _ = Describe("Prometheus Alert Rules", func() {
+	var prometheusRuleObj *unstructured.Unstructured
+
 	BeforeEach(func() {
 		// Install PrometheusRule CRD for validation
 		err := InstallCRDs(ctx, k8sClient, CRDSetPrometheus)
@@ -21,38 +23,28 @@ var _ = Describe("Prometheus Alert Rules", func() {
 		DeferCleanup(func() {
 			_ = UninstallCRDs(ctx, k8sClient, CRDSetPrometheus)
 		})
-	})
 
-	It("should have valid PrometheusRule YAML syntax", func() {
-		By("reading the PrometheusRule template")
+		// Read and parse PrometheusRule template once for all tests
 		templatePath := filepath.Join("..", "assets", "observability", "prometheus-rules.yaml.tpl")
 		data, err := os.ReadFile(templatePath)
 		Expect(err).NotTo(HaveOccurred(), "PrometheusRule template should exist")
 
-		By("parsing YAML to unstructured object")
-		obj := &unstructured.Unstructured{}
-		err = yaml.Unmarshal(data, obj)
+		prometheusRuleObj = &unstructured.Unstructured{}
+		err = yaml.Unmarshal(data, prometheusRuleObj)
 		Expect(err).NotTo(HaveOccurred(), "PrometheusRule YAML should be valid")
+	})
 
+	It("should have valid PrometheusRule YAML syntax", func() {
 		By("verifying it's a PrometheusRule resource")
-		Expect(obj.GetKind()).To(Equal("PrometheusRule"))
-		Expect(obj.GetAPIVersion()).To(Equal("monitoring.coreos.com/v1"))
-		Expect(obj.GetName()).To(Equal("virt-platform-autopilot-alerts"))
-		Expect(obj.GetNamespace()).To(Equal("openshift-cnv"))
+		Expect(prometheusRuleObj.GetKind()).To(Equal("PrometheusRule"))
+		Expect(prometheusRuleObj.GetAPIVersion()).To(Equal("monitoring.coreos.com/v1"))
+		Expect(prometheusRuleObj.GetName()).To(Equal("virt-platform-autopilot-alerts"))
+		Expect(prometheusRuleObj.GetNamespace()).To(Equal("openshift-cnv"))
 	})
 
 	It("should contain all required alert rules", func() {
-		By("loading the PrometheusRule template")
-		templatePath := filepath.Join("..", "assets", "observability", "prometheus-rules.yaml.tpl")
-		data, err := os.ReadFile(templatePath)
-		Expect(err).NotTo(HaveOccurred())
-
-		obj := &unstructured.Unstructured{}
-		err = yaml.Unmarshal(data, obj)
-		Expect(err).NotTo(HaveOccurred())
-
 		By("extracting the spec.groups field")
-		spec, found, err := unstructured.NestedFieldNoCopy(obj.Object, "spec")
+		spec, found, err := unstructured.NestedFieldNoCopy(prometheusRuleObj.Object, "spec")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue(), "spec field should exist")
 
@@ -99,17 +91,8 @@ var _ = Describe("Prometheus Alert Rules", func() {
 	})
 
 	It("should have proper labels and annotations on all alerts", func() {
-		By("loading the PrometheusRule template")
-		templatePath := filepath.Join("..", "assets", "observability", "prometheus-rules.yaml.tpl")
-		data, err := os.ReadFile(templatePath)
-		Expect(err).NotTo(HaveOccurred())
-
-		obj := &unstructured.Unstructured{}
-		err = yaml.Unmarshal(data, obj)
-		Expect(err).NotTo(HaveOccurred())
-
 		By("extracting all rules from all groups")
-		groups, _, _ := unstructured.NestedSlice(obj.Object, "spec", "groups")
+		groups, _, _ := unstructured.NestedSlice(prometheusRuleObj.Object, "spec", "groups")
 
 		allAlerts := []map[string]interface{}{}
 		for _, group := range groups {
@@ -151,16 +134,9 @@ var _ = Describe("Prometheus Alert Rules", func() {
 			_ = k8sClient.Delete(ctx, ns)
 		})
 
-		By("loading the PrometheusRule template")
-		templatePath := filepath.Join("..", "assets", "observability", "prometheus-rules.yaml.tpl")
-		data, err := os.ReadFile(templatePath)
-		Expect(err).NotTo(HaveOccurred())
-
-		obj := &unstructured.Unstructured{}
-		err = yaml.Unmarshal(data, obj)
-		Expect(err).NotTo(HaveOccurred())
-
 		By("applying PrometheusRule to envtest cluster")
+		// Use a deep copy to avoid modifying the shared cached object
+		obj := prometheusRuleObj.DeepCopy()
 		// This validates the YAML structure against the PrometheusRule CRD schema
 		err = k8sClient.Create(ctx, obj)
 		Expect(err).NotTo(HaveOccurred(), "PrometheusRule should pass CRD validation")
