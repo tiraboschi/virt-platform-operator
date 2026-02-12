@@ -15,10 +15,10 @@ const (
 	driftMachineConfigCRDName = "machineconfigs.machineconfiguration.openshift.io"
 
 	// Expected resource name created by operator asset
-	driftMcName = "50-virt-swap-enable"
+	driftMcName = "99-kubevirt-swap-optimization"
 
 	// Expected spec field value from the autopilot's asset
-	driftExpectedIgnitionVersion = "3.2.0"
+	driftExpectedIgnitionVersion = "3.4.0"
 
 	// Managed-by label
 	driftManagedByLabel = "platform.kubevirt.io/managed-by"
@@ -85,12 +85,12 @@ var _ = Describe("Drift Detection Tests", Ordered, func() {
 		waitForOperatorRestart(prevCount)
 	})
 
-	It("should create the 50-virt-swap-enable MachineConfig with managed-by label", func() {
+	It("should create the 99-kubevirt-swap-optimization MachineConfig with managed-by label", func() {
 		Eventually(func() error {
 			_, err := getUnstructuredResource(driftMachineConfigGVK, driftMcName, "")
 			return err
 		}, timeout, interval).Should(Succeed(),
-			"Operator should create the 50-virt-swap-enable MachineConfig")
+			"Operator should create the 99-kubevirt-swap-optimization MachineConfig")
 
 		mc, err := getUnstructuredResource(driftMachineConfigGVK, driftMcName, "")
 		Expect(err).NotTo(HaveOccurred())
@@ -108,7 +108,7 @@ var _ = Describe("Drift Detection Tests", Ordered, func() {
 		Expect(setNestedField(mc, "2.0.0", "spec", "config", "ignition", "version")).To(Succeed())
 		Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
-		By("verifying operator corrects the drift back to 3.2.0")
+		By("verifying operator corrects the drift back to expected version")
 		Eventually(func() string {
 			obj, err := getUnstructuredResource(driftMachineConfigGVK, driftMcName, "")
 			if err != nil {
@@ -117,7 +117,7 @@ var _ = Describe("Drift Detection Tests", Ordered, func() {
 			val, _, _ := getNestedString(obj, "spec", "config", "ignition", "version")
 			return val
 		}, timeout, interval).Should(Equal(driftExpectedIgnitionVersion),
-			"Operator should restore ignition.version to 3.2.0")
+			"Operator should restore ignition.version to expected version")
 
 		By("checking for DriftCorrected event")
 		Eventually(func() int {
