@@ -75,7 +75,7 @@ spec:
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  name: 50-virt-swap-enable
+  name: 99-kubevirt-swap-optimization
   labels:
     machineconfiguration.openshift.io/role: worker
     platform.kubevirt.io/managed-by: virt-platform-autopilot

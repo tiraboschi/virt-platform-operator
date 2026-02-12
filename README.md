@@ -94,7 +94,7 @@ Users can customize ANY managed resource (including HCO) via annotations:
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  name: 50-virt-swap-enable
+  name: 99-kubevirt-swap-optimization
   annotations:
     platform.kubevirt.io/patch: |
       [
