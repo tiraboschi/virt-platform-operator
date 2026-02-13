@@ -95,10 +95,15 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 	// Root Exclusion: Check if this resource is explicitly disabled via annotation
 	disabledAnnotation := renderCtx.HCO.GetAnnotations()[DisabledResourcesAnnotation]
 	if disabledAnnotation != "" {
-		disabledMap := ParseDisabledResources(disabledAnnotation)
-		if IsResourceExcluded(desired.GetKind(), desired.GetName(), disabledMap) {
+		rules, err := ParseDisabledResources(disabledAnnotation)
+		if err != nil {
+			logger.Error(err, "Invalid disabled-resources annotation, ignoring",
+				"annotation", disabledAnnotation,
+			)
+		} else if IsResourceExcluded(desired.GetKind(), desired.GetNamespace(), desired.GetName(), rules) {
 			logger.Info("Skipping resource due to Root Exclusion",
 				"kind", desired.GetKind(),
+				"namespace", desired.GetNamespace(),
 				"name", desired.GetName(),
 				"annotation", DisabledResourcesAnnotation,
 			)

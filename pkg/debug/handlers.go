@@ -138,8 +138,12 @@ func (s *Server) handleRender(w http.ResponseWriter, r *http.Request) {
 		// Check root exclusion
 		disabledAnnotation := renderCtx.HCO.GetAnnotations()[engine.DisabledResourcesAnnotation]
 		if disabledAnnotation != "" {
-			disabledMap := engine.ParseDisabledResources(disabledAnnotation)
-			if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetName(), disabledMap) {
+			rules, err := engine.ParseDisabledResources(disabledAnnotation)
+			if err != nil {
+				// Log error but continue (fail-open for debug endpoint)
+				continue
+			}
+			if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetNamespace(), rendered.GetName(), rules) {
 				output.Status = "FILTERED"
 				output.Reason = "Root exclusion (disabled-resources annotation)"
 				if showExcluded {
@@ -230,8 +234,15 @@ func (s *Server) handleRenderAsset(w http.ResponseWriter, r *http.Request) {
 	// Check root exclusion
 	disabledAnnotation := renderCtx.HCO.GetAnnotations()[engine.DisabledResourcesAnnotation]
 	if disabledAnnotation != "" {
-		disabledMap := engine.ParseDisabledResources(disabledAnnotation)
-		if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetName(), disabledMap) {
+		rules, err := engine.ParseDisabledResources(disabledAnnotation)
+		if err != nil {
+			// Log error but continue (fail-open for debug endpoint)
+			output.Status = "INCLUDED"
+			output.Object = rendered
+			s.writeResponse(w, []RenderOutput{output}, format)
+			return
+		}
+		if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetNamespace(), rendered.GetName(), rules) {
 			output.Status = "FILTERED"
 			output.Reason = "Root exclusion (disabled-resources annotation)"
 			s.writeResponse(w, []RenderOutput{output}, format)
@@ -316,8 +327,12 @@ func (s *Server) handleExclusions(w http.ResponseWriter, r *http.Request) {
 		// Check root exclusion
 		disabledAnnotation := renderCtx.HCO.GetAnnotations()[engine.DisabledResourcesAnnotation]
 		if disabledAnnotation != "" {
-			disabledMap := engine.ParseDisabledResources(disabledAnnotation)
-			if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetName(), disabledMap) {
+			rules, err := engine.ParseDisabledResources(disabledAnnotation)
+			if err != nil {
+				// Log error but continue (fail-open for debug endpoint)
+				continue
+			}
+			if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetNamespace(), rendered.GetName(), rules) {
 				exclusion := ExclusionInfo{
 					Asset:     assetMeta.Name,
 					Path:      assetMeta.Path,
@@ -326,7 +341,7 @@ func (s *Server) handleExclusions(w http.ResponseWriter, r *http.Request) {
 					Details: map[string]string{
 						"annotation": engine.DisabledResourcesAnnotation,
 						"value":      disabledAnnotation,
-						"resource":   fmt.Sprintf("%s/%s", rendered.GetKind(), rendered.GetName()),
+						"resource":   fmt.Sprintf("%s/%s/%s", rendered.GetKind(), rendered.GetNamespace(), rendered.GetName()),
 					},
 					Metadata: &assetMeta,
 				}

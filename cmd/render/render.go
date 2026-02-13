@@ -179,8 +179,12 @@ func runRender(cmd *cobra.Command, args []string) error {
 		// Check root exclusion
 		disabledAnnotation := renderCtx.HCO.GetAnnotations()[engine.DisabledResourcesAnnotation]
 		if disabledAnnotation != "" {
-			disabledMap := engine.ParseDisabledResources(disabledAnnotation)
-			if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetName(), disabledMap) {
+			rules, err := engine.ParseDisabledResources(disabledAnnotation)
+			if err != nil {
+				// Log error but continue (fail-open for CLI)
+				continue
+			}
+			if engine.IsResourceExcluded(rendered.GetKind(), rendered.GetNamespace(), rendered.GetName(), rules) {
 				output.Status = "FILTERED"
 				output.Reason = "Root exclusion (disabled-resources annotation)"
 				if showExcluded {

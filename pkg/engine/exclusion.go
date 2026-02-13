@@ -18,9 +18,11 @@ package engine
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -28,57 +30,87 @@ const (
 	DisabledResourcesAnnotation = "platform.kubevirt.io/disabled-resources"
 )
 
-// ParseDisabledResources parses the disabled-resources annotation
-// Format: "Kind/Name, Kind/Name, ..."
-// Returns: map["Kind/Name"]bool for O(1) lookup
-func ParseDisabledResources(annotation string) map[string]bool {
-	disabled := make(map[string]bool)
+// ExclusionRule defines a single resource exclusion rule
+type ExclusionRule struct {
+	Kind      string `yaml:"kind"`      // Required: Resource kind (e.g., "ConfigMap")
+	Namespace string `yaml:"namespace"` // Optional: Namespace (empty = all namespaces, supports wildcards)
+	Name      string `yaml:"name"`      // Required: Resource name (supports wildcards)
+}
 
-	if annotation == "" {
-		return disabled
+// ParseDisabledResources parses the disabled-resources annotation as YAML
+// Format: YAML array of ExclusionRule objects
+// Returns: slice of ExclusionRule and error if parsing fails
+func ParseDisabledResources(annotation string) ([]ExclusionRule, error) {
+	trimmed := strings.TrimSpace(annotation)
+	if trimmed == "" {
+		return nil, nil // Empty is valid (no exclusions)
 	}
 
-	// Split by comma and trim whitespace
-	pairs := strings.Split(annotation, ",")
-	for _, pair := range pairs {
-		trimmed := strings.TrimSpace(pair)
-		if trimmed != "" {
-			disabled[trimmed] = true
+	var rules []ExclusionRule
+	if err := yaml.Unmarshal([]byte(trimmed), &rules); err != nil {
+		return nil, fmt.Errorf("failed to parse disabled-resources annotation: %w", err)
+	}
+
+	// Validate rules
+	for i, rule := range rules {
+		if rule.Kind == "" {
+			return nil, fmt.Errorf("rule %d: kind is required", i)
+		}
+		if rule.Name == "" {
+			return nil, fmt.Errorf("rule %d: name is required", i)
 		}
 	}
 
-	return disabled
+	return rules, nil
+}
+
+// IsResourceExcluded checks if a specific resource matches any exclusion rule
+func IsResourceExcluded(kind, namespace, name string, rules []ExclusionRule) bool {
+	for _, rule := range rules {
+		// Check kind (exact match, case-sensitive)
+		if rule.Kind != kind {
+			continue
+		}
+
+		// Check namespace
+		if rule.Namespace != "" {
+			// Rule has namespace specified - must match
+			matched, _ := filepath.Match(rule.Namespace, namespace)
+			if !matched {
+				continue
+			}
+		}
+		// If rule.Namespace is empty, it matches any namespace
+
+		// Check name with wildcard support
+		matched, err := filepath.Match(rule.Name, name)
+		if err != nil {
+			// Invalid pattern - skip this rule
+			continue
+		}
+
+		if matched {
+			return true // Exclusion matched
+		}
+	}
+
+	return false
 }
 
 // FilterExcludedAssets removes disabled resources from asset list
 // Returns a new slice with excluded assets removed
-func FilterExcludedAssets(assets []*unstructured.Unstructured, disabledMap map[string]bool) []*unstructured.Unstructured {
-	if len(disabledMap) == 0 {
-		return assets // No filtering needed
+func FilterExcludedAssets(assets []*unstructured.Unstructured, rules []ExclusionRule) []*unstructured.Unstructured {
+	if len(rules) == 0 {
+		return assets
 	}
 
 	filtered := make([]*unstructured.Unstructured, 0, len(assets))
-
 	for _, asset := range assets {
-		key := fmt.Sprintf("%s/%s", asset.GetKind(), asset.GetName())
-
-		if disabledMap[key] {
-			// Skip this asset - it's disabled
-			continue
+		if IsResourceExcluded(asset.GetKind(), asset.GetNamespace(), asset.GetName(), rules) {
+			continue // Skip excluded asset
 		}
-
 		filtered = append(filtered, asset)
 	}
 
 	return filtered
-}
-
-// IsResourceExcluded checks if a specific resource is in the disabled map
-func IsResourceExcluded(kind, name string, disabledMap map[string]bool) bool {
-	if len(disabledMap) == 0 {
-		return false
-	}
-
-	key := fmt.Sprintf("%s/%s", kind, name)
-	return disabledMap[key]
 }
