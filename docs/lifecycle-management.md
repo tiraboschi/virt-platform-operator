@@ -144,10 +144,11 @@ Root exclusion prevents specific resources from being created in the first place
 - Disabling features not relevant to the deployment
 - Preventing resource creation in environments where they would fail
 - Temporary workarounds for known issues
+- Excluding groups of related resources using wildcards
 
 ### Annotation Format
 
-Set the `platform.kubevirt.io/disabled-resources` annotation on the HyperConverged CR:
+Set the `platform.kubevirt.io/disabled-resources` annotation on the HyperConverged CR using YAML syntax:
 
 ```yaml
 apiVersion: hco.kubevirt.io/v1
@@ -156,68 +157,160 @@ metadata:
   name: kubevirt-hyperconverged
   namespace: openshift-cnv
   annotations:
-    platform.kubevirt.io/disabled-resources: "KubeDescheduler/cluster, MachineConfig/50-swap-enable"
+    platform.kubevirt.io/disabled-resources: |
+      - kind: KubeDescheduler  # Cluster-scoped resource
+        name: cluster
+
+      - kind: ConfigMap
+        namespace: openshift-cnv
+        name: virt-tuning-*      # Wildcard for multiple configs
+
+      - kind: Service
+        namespace: prod-*        # Namespace wildcard
+        name: metrics
+
+      - kind: Secret             # Omit namespace = all namespaces
+        name: credentials-*
 ```
 
-Format: `"Kind/Name, Kind/Name, ..."`
+**YAML Structure:**
+- Array of exclusion rules
+- Each rule requires:
+  - `kind`: Resource kind (case-sensitive, e.g., "ConfigMap")
+  - `name`: Resource name (supports wildcards with `*`)
+- Optional field:
+  - `namespace`: Target namespace (supports wildcards, omit to match all namespaces)
+
+**Wildcard Support:**
+- `*` matches any sequence of characters
+- Examples: `virt-*`, `*-config`, `prod-*`
+- Glob pattern semantics (uses `filepath.Match`)
+
+**Namespace Matching:**
+- Specify namespace for exact or wildcard namespace matching
+- Omit namespace field to match resources in any namespace (including cluster-scoped)
+- Empty namespace in rule = matches all namespaces
 
 ### Implementation
 
-1. Operator parses the annotation on each reconciliation
-2. After rendering assets, filters out excluded resources in-memory
-3. Excluded resources are never applied (ServerSideApply is never called)
-4. Logs each skipped resource for transparency
+1. Operator parses the annotation as YAML on each reconciliation
+2. Invalid YAML logs an error and continues without exclusions (fail-open)
+3. After rendering assets, filters out excluded resources in-memory using pattern matching
+4. Excluded resources are never applied (ServerSideApply is never called)
+5. Logs each skipped resource for transparency
 
 **Example log:**
 ```
-Skipping resource due to Root Exclusion kind=KubeDescheduler name=cluster annotation=platform.kubevirt.io/disabled-resources
+Skipping resource due to Root Exclusion kind=ConfigMap namespace=openshift-cnv name=virt-handler annotation=platform.kubevirt.io/disabled-resources
 ```
 
 ### Use Cases
 
-**Disable KubeDescheduler in non-cluster environments:**
+**Disable KubeDescheduler (cluster-scoped):**
 ```yaml
 annotations:
-  platform.kubevirt.io/disabled-resources: "KubeDescheduler/cluster"
+  platform.kubevirt.io/disabled-resources: |
+    - kind: KubeDescheduler
+      name: cluster
 ```
 
 **Disable swap on specific clusters:**
 ```yaml
 annotations:
-  platform.kubevirt.io/disabled-resources: "MachineConfig/50-swap-enable"
+  platform.kubevirt.io/disabled-resources: |
+    - kind: MachineConfig
+      name: 50-swap-enable
 ```
 
-**Temporary workaround for failing resource:**
+**Disable all virt tuning configs in openshift-cnv namespace:**
 ```yaml
 annotations:
-  platform.kubevirt.io/disabled-resources: "PersesDataSource/virt-metrics"
+  platform.kubevirt.io/disabled-resources: |
+    - kind: ConfigMap
+      namespace: openshift-cnv
+      name: virt-*
+```
+
+**Disable metrics service in all prod namespaces:**
+```yaml
+annotations:
+  platform.kubevirt.io/disabled-resources: |
+    - kind: Service
+      namespace: prod-*
+      name: metrics
+```
+
+**Disable specific secret across all namespaces:**
+```yaml
+annotations:
+  platform.kubevirt.io/disabled-resources: |
+    - kind: Secret
+      name: credentials-db
+```
+
+**Multiple exclusions:**
+```yaml
+annotations:
+  platform.kubevirt.io/disabled-resources: |
+    - kind: KubeDescheduler
+      name: cluster
+    - kind: ConfigMap
+      namespace: openshift-cnv
+      name: virt-*
+    - kind: PersesDataSource
+      namespace: openshift-cnv
+      name: virt-metrics
 ```
 
 ### Comparison with `mode: unmanaged`
 
 | Feature | Root Exclusion | `mode: unmanaged` |
 |---------|---------------|-------------------|
-| Scope | Specific resources (Kind/Name) | Individual resource (annotation per object) |
+| Scope | Specific resources (Kind/Namespace/Name + wildcards) | Individual resource (annotation per object) |
 | When | Day 0 (prevents creation) | Day 1+ (stops reconciliation) |
 | RBAC | No impact (resource never created) | Full RBAC still required |
-| Use case | Disable features cluster-wide | Opt out of management per resource |
+| Wildcards | Supported (name and namespace) | Not applicable |
+| Namespace filtering | Supported | Not applicable |
+| Use case | Disable features/patterns cluster-wide | Opt out of management per resource |
 
 **When to use Root Exclusion:**
 - Cluster-wide feature disablement
 - Resources that should never be created
 - Temporary workarounds before feature flag available
+- Pattern-based exclusions (e.g., all virt-* configs)
+- Namespace-specific exclusions
 
 **When to use `mode: unmanaged`:**
 - Per-resource customization
 - Gradual migration to external management
 - Temporary user overrides
 
-### Limitations
+### Features
 
-- **Case-sensitive**: `KubeDescheduler/cluster` ≠ `kubedescheduler/cluster`
-- **Exact match**: Must match Kind and Name exactly
-- **No wildcard support**: Cannot use `*` or regex
-- **No namespace filtering**: Cannot exclude `ConfigMap/foo` only in namespace `bar`
+- **Case-sensitive kind**: `ConfigMap` ≠ `configmap`
+- **Wildcard support**: Use `*` in name or namespace fields
+- **Namespace filtering**: Exclude resources in specific namespaces or namespace patterns
+- **Any-namespace matching**: Omit namespace field to match resources in all namespaces
+- **Error handling**: Invalid YAML logs error but continues (fail-open)
+- **Pattern validation**: Invalid glob patterns are skipped gracefully
+
+### Migration Note
+
+This is a breaking change from the previous comma-separated format (`"Kind/Name, Kind/Name"`). The old format is no longer supported. Update your HyperConverged annotations to use the new YAML syntax.
+
+**Before (old format - no longer supported):**
+```yaml
+platform.kubevirt.io/disabled-resources: "KubeDescheduler/cluster, MachineConfig/50-swap-enable"
+```
+
+**After (new format):**
+```yaml
+platform.kubevirt.io/disabled-resources: |
+  - kind: KubeDescheduler
+    name: cluster
+  - kind: MachineConfig
+    name: 50-swap-enable
+```
 
 ## Troubleshooting
 
@@ -329,7 +422,19 @@ User wants to disable KubeDescheduler due to known issue:
 
 ```bash
 kubectl annotate hco kubevirt-hyperconverged -n openshift-cnv \
-  platform.kubevirt.io/disabled-resources="KubeDescheduler/cluster"
+  platform.kubevirt.io/disabled-resources='- kind: KubeDescheduler
+  name: cluster'
+```
+
+Or using kubectl patch:
+```bash
+kubectl patch hco kubevirt-hyperconverged -n openshift-cnv --type=merge -p '
+metadata:
+  annotations:
+    platform.kubevirt.io/disabled-resources: |
+      - kind: KubeDescheduler
+        name: cluster
+'
 ```
 
 Operator will skip creating/updating KubeDescheduler.

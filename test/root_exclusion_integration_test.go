@@ -27,36 +27,68 @@ import (
 var _ = Describe("Root Exclusion Integration", func() {
 	Describe("ParseDisabledResources", func() {
 		It("should parse empty annotation", func() {
-			result := engine.ParseDisabledResources("")
-			Expect(result).To(BeEmpty())
+			result, err := engine.ParseDisabledResources("")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(BeNil())
 		})
 
 		It("should parse single resource", func() {
-			result := engine.ParseDisabledResources("ConfigMap/test-config")
+			yaml := `
+- kind: ConfigMap
+  namespace: default
+  name: test-config
+`
+			result, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveLen(1))
-			Expect(result["ConfigMap/test-config"]).To(BeTrue())
+			Expect(result[0].Kind).To(Equal("ConfigMap"))
+			Expect(result[0].Namespace).To(Equal("default"))
+			Expect(result[0].Name).To(Equal("test-config"))
 		})
 
-		It("should parse multiple resources with whitespace", func() {
-			result := engine.ParseDisabledResources("ConfigMap/foo, Secret/bar, Deployment/baz")
+		It("should parse multiple resources with different namespaces", func() {
+			yaml := `
+- kind: ConfigMap
+  namespace: openshift-cnv
+  name: foo
+- kind: Secret
+  name: bar
+- kind: Deployment
+  namespace: default
+  name: baz
+`
+			result, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveLen(3))
-			Expect(result["ConfigMap/foo"]).To(BeTrue())
-			Expect(result["Secret/bar"]).To(BeTrue())
-			Expect(result["Deployment/baz"]).To(BeTrue())
-		})
-
-		It("should handle extra whitespace and commas", func() {
-			result := engine.ParseDisabledResources("  ConfigMap/foo  ,  ,  Secret/bar  , ")
-			Expect(result).To(HaveLen(2))
-			Expect(result["ConfigMap/foo"]).To(BeTrue())
-			Expect(result["Secret/bar"]).To(BeTrue())
+			Expect(result[0].Kind).To(Equal("ConfigMap"))
+			Expect(result[0].Namespace).To(Equal("openshift-cnv"))
+			Expect(result[0].Name).To(Equal("foo"))
+			Expect(result[1].Kind).To(Equal("Secret"))
+			Expect(result[1].Namespace).To(Equal(""))
+			Expect(result[1].Name).To(Equal("bar"))
 		})
 
 		It("should handle complex resource names", func() {
-			result := engine.ParseDisabledResources("KubeDescheduler/cluster, MachineConfig/50-swap-enable")
+			yaml := `
+- kind: KubeDescheduler
+  name: cluster
+- kind: MachineConfig
+  name: 50-swap-enable
+`
+			result, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveLen(2))
-			Expect(result["KubeDescheduler/cluster"]).To(BeTrue())
-			Expect(result["MachineConfig/50-swap-enable"]).To(BeTrue())
+			Expect(result[0].Kind).To(Equal("KubeDescheduler"))
+			Expect(result[0].Name).To(Equal("cluster"))
+			Expect(result[1].Kind).To(Equal("MachineConfig"))
+			Expect(result[1].Name).To(Equal("50-swap-enable"))
+		})
+
+		It("should return error for invalid YAML", func() {
+			yaml := "invalid yaml ["
+			result, err := engine.ParseDisabledResources(yaml)
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
 		})
 	})
 
@@ -73,15 +105,17 @@ var _ = Describe("Root Exclusion Integration", func() {
 			}
 		})
 
-		It("should return all assets when disabled map is empty", func() {
-			disabled := make(map[string]bool)
-			result := engine.FilterExcludedAssets(assets, disabled)
+		It("should return all assets when rules is empty", func() {
+			var rules []engine.ExclusionRule
+			result := engine.FilterExcludedAssets(assets, rules)
 			Expect(result).To(HaveLen(4))
 		})
 
 		It("should exclude specified resource", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/config-1")
-			result := engine.FilterExcludedAssets(assets, disabled)
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "config-1"},
+			}
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			Expect(result).To(HaveLen(3))
 
@@ -100,8 +134,11 @@ var _ = Describe("Root Exclusion Integration", func() {
 		})
 
 		It("should exclude multiple resources", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/config-1, Secret/secret-1")
-			result := engine.FilterExcludedAssets(assets, disabled)
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "config-1"},
+				{Kind: "Secret", Namespace: "default", Name: "secret-1"},
+			}
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			Expect(result).To(HaveLen(2))
 
@@ -118,27 +155,37 @@ var _ = Describe("Root Exclusion Integration", func() {
 		})
 
 		It("should exclude all when all are specified", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/config-1, ConfigMap/config-2, Secret/secret-1, Deployment/deploy-1")
-			result := engine.FilterExcludedAssets(assets, disabled)
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "config-1"},
+				{Kind: "ConfigMap", Namespace: "default", Name: "config-2"},
+				{Kind: "Secret", Namespace: "default", Name: "secret-1"},
+				{Kind: "Deployment", Namespace: "default", Name: "deploy-1"},
+			}
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			Expect(result).To(BeEmpty())
 		})
 
 		It("should keep all when none match", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/nonexistent, Service/test")
-			result := engine.FilterExcludedAssets(assets, disabled)
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "nonexistent"},
+				{Kind: "Service", Namespace: "default", Name: "test"},
+			}
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			Expect(result).To(HaveLen(4))
 		})
 
-		It("should handle nil disabled map", func() {
+		It("should handle nil rules", func() {
 			result := engine.FilterExcludedAssets(assets, nil)
 			Expect(result).To(HaveLen(4))
 		})
 
-		It("should be case-sensitive for Kind and Name", func() {
-			disabled := engine.ParseDisabledResources("configmap/config-1") // lowercase kind
-			result := engine.FilterExcludedAssets(assets, disabled)
+		It("should be case-sensitive for Kind", func() {
+			rules := []engine.ExclusionRule{
+				{Kind: "configmap", Namespace: "default", Name: "config-1"}, // lowercase kind
+			}
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			// Should NOT exclude because Kind is case-sensitive
 			Expect(result).To(HaveLen(4))
@@ -146,67 +193,143 @@ var _ = Describe("Root Exclusion Integration", func() {
 	})
 
 	Describe("IsResourceExcluded", func() {
-		It("should return false for empty disabled map", func() {
-			disabled := make(map[string]bool)
-			Expect(engine.IsResourceExcluded("ConfigMap", "test", disabled)).To(BeFalse())
+		It("should return false for empty rules", func() {
+			var rules []engine.ExclusionRule
+			Expect(engine.IsResourceExcluded("ConfigMap", "default", "test", rules)).To(BeFalse())
 		})
 
 		It("should return true for excluded resource", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/test")
-			Expect(engine.IsResourceExcluded("ConfigMap", "test", disabled)).To(BeTrue())
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "test"},
+			}
+			Expect(engine.IsResourceExcluded("ConfigMap", "default", "test", rules)).To(BeTrue())
 		})
 
 		It("should return false for non-excluded resource", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/test")
-			Expect(engine.IsResourceExcluded("ConfigMap", "other", disabled)).To(BeFalse())
-			Expect(engine.IsResourceExcluded("Secret", "test", disabled)).To(BeFalse())
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "test"},
+			}
+			Expect(engine.IsResourceExcluded("ConfigMap", "default", "other", rules)).To(BeFalse())
+			Expect(engine.IsResourceExcluded("Secret", "default", "test", rules)).To(BeFalse())
 		})
 
 		It("should be case-sensitive", func() {
-			disabled := engine.ParseDisabledResources("ConfigMap/test")
-			Expect(engine.IsResourceExcluded("configmap", "test", disabled)).To(BeFalse())
-			Expect(engine.IsResourceExcluded("ConfigMap", "Test", disabled)).To(BeFalse())
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "default", Name: "test"},
+			}
+			Expect(engine.IsResourceExcluded("configmap", "default", "test", rules)).To(BeFalse())
+			Expect(engine.IsResourceExcluded("ConfigMap", "default", "Test", rules)).To(BeFalse())
 		})
 
-		It("should handle nil disabled map", func() {
-			Expect(engine.IsResourceExcluded("ConfigMap", "test", nil)).To(BeFalse())
+		It("should handle nil rules", func() {
+			Expect(engine.IsResourceExcluded("ConfigMap", "default", "test", nil)).To(BeFalse())
+		})
+	})
+
+	Describe("Wildcard and namespace filtering", func() {
+		It("should filter with name wildcards", func() {
+			rules := []engine.ExclusionRule{
+				{Kind: "ConfigMap", Namespace: "openshift-cnv", Name: "virt-*"},
+			}
+
+			assets := []*unstructured.Unstructured{
+				createUnstructuredResource("ConfigMap", "virt-handler", "openshift-cnv"),
+				createUnstructuredResource("ConfigMap", "virt-controller", "openshift-cnv"),
+				createUnstructuredResource("ConfigMap", "other-config", "openshift-cnv"),
+			}
+
+			result := engine.FilterExcludedAssets(assets, rules)
+
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].GetName()).To(Equal("other-config"))
+		})
+
+		It("should filter with namespace wildcards", func() {
+			rules := []engine.ExclusionRule{
+				{Kind: "Service", Namespace: "prod-*", Name: "metrics"},
+			}
+
+			assets := []*unstructured.Unstructured{
+				createUnstructuredResource("Service", "metrics", "prod-us"),
+				createUnstructuredResource("Service", "metrics", "prod-eu"),
+				createUnstructuredResource("Service", "metrics", "dev-us"),
+			}
+
+			result := engine.FilterExcludedAssets(assets, rules)
+
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].GetNamespace()).To(Equal("dev-us"))
+		})
+
+		It("should match any namespace when rule namespace is empty", func() {
+			rules := []engine.ExclusionRule{
+				{Kind: "Secret", Name: "credentials"},
+			}
+
+			assets := []*unstructured.Unstructured{
+				createUnstructuredResource("Secret", "credentials", "default"),
+				createUnstructuredResource("Secret", "credentials", "kube-system"),
+				createUnstructuredResource("Secret", "other", "default"),
+			}
+
+			result := engine.FilterExcludedAssets(assets, rules)
+
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].GetName()).To(Equal("other"))
 		})
 	})
 
 	Describe("Real-world scenarios", func() {
 		It("should handle KubeDescheduler exclusion", func() {
-			annotation := "KubeDescheduler/cluster"
-			disabled := engine.ParseDisabledResources(annotation)
+			yaml := `
+- kind: KubeDescheduler
+  name: cluster
+`
+			rules, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
 
 			assets := []*unstructured.Unstructured{
 				createUnstructuredResource("KubeDescheduler", "cluster", ""),
 				createUnstructuredResource("HyperConverged", "kubevirt-hyperconverged", "openshift-cnv"),
 			}
 
-			result := engine.FilterExcludedAssets(assets, disabled)
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			Expect(result).To(HaveLen(1))
 			Expect(result[0].GetKind()).To(Equal("HyperConverged"))
 		})
 
 		It("should handle MachineConfig exclusion", func() {
-			annotation := "MachineConfig/50-swap-enable"
-			disabled := engine.ParseDisabledResources(annotation)
+			yaml := `
+- kind: MachineConfig
+  name: 50-swap-enable
+`
+			rules, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
 
 			assets := []*unstructured.Unstructured{
 				createUnstructuredResource("MachineConfig", "50-swap-enable", ""),
 				createUnstructuredResource("MachineConfig", "51-pci-passthrough", ""),
 			}
 
-			result := engine.FilterExcludedAssets(assets, disabled)
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			Expect(result).To(HaveLen(1))
 			Expect(result[0].GetName()).To(Equal("51-pci-passthrough"))
 		})
 
 		It("should handle multiple feature exclusions", func() {
-			annotation := "KubeDescheduler/cluster, MachineConfig/50-swap-enable, PersesDataSource/virt-metrics"
-			disabled := engine.ParseDisabledResources(annotation)
+			yaml := `
+- kind: KubeDescheduler
+  name: cluster
+- kind: MachineConfig
+  name: 50-swap-enable
+- kind: PersesDataSource
+  namespace: openshift-cnv
+  name: virt-metrics
+`
+			rules, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
 
 			assets := []*unstructured.Unstructured{
 				createUnstructuredResource("KubeDescheduler", "cluster", ""),
@@ -216,7 +339,7 @@ var _ = Describe("Root Exclusion Integration", func() {
 				createUnstructuredResource("HyperConverged", "kubevirt-hyperconverged", "openshift-cnv"),
 			}
 
-			result := engine.FilterExcludedAssets(assets, disabled)
+			result := engine.FilterExcludedAssets(assets, rules)
 
 			// Should have 2 resources left (MachineConfig and HyperConverged)
 			Expect(result).To(HaveLen(2))
@@ -230,6 +353,28 @@ var _ = Describe("Root Exclusion Integration", func() {
 				"51-pci-passthrough",
 				"kubevirt-hyperconverged",
 			))
+		})
+
+		It("should handle wildcard exclusions for virt configs", func() {
+			yaml := `
+- kind: ConfigMap
+  namespace: openshift-cnv
+  name: virt-*
+`
+			rules, err := engine.ParseDisabledResources(yaml)
+			Expect(err).ToNot(HaveOccurred())
+
+			assets := []*unstructured.Unstructured{
+				createUnstructuredResource("ConfigMap", "virt-handler", "openshift-cnv"),
+				createUnstructuredResource("ConfigMap", "virt-controller", "openshift-cnv"),
+				createUnstructuredResource("ConfigMap", "virt-api", "openshift-cnv"),
+				createUnstructuredResource("ConfigMap", "other-config", "openshift-cnv"),
+			}
+
+			result := engine.FilterExcludedAssets(assets, rules)
+
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].GetName()).To(Equal("other-config"))
 		})
 	})
 })
