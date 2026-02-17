@@ -97,27 +97,27 @@ This document tracks implementation progress against the original plan in `claud
 - [x] Step 6: Anti-thrashing gate before SSA (token bucket)
 - [x] Step 7: Apply via Server-Side Apply + Record update for throttling
 
-### ❌ Phase 1 Asset Templates
+### ✅ Phase 1 Asset Templates - COMPLETE
 
 **Always-On Assets** (from plan lines 423-432):
-- [x] assets/machine-config/01-swap-enable.yaml
-- [ ] assets/machine-config/02-pci-passthrough.yaml.tpl (PCI/IOMMU)
-- [ ] assets/machine-config/03-numa.yaml.tpl (NUMA topology)
-- [ ] assets/kubelet/perf-settings.yaml.tpl (nodeStatusMaxImages, maxPods)
-- [x] assets/node-health/standard-remediation.yaml
-- [ ] assets/operators/mtv.yaml.tpl (MTV operator CR)
-- [x] assets/operators/metallb.yaml.tpl (MetalLB operator CR)
-- [x] assets/operators/observability.yaml.tpl (Observability UI plugin)
+- [x] assets/active/machine-config/01-swap-enable.yaml
+- [x] assets/active/machine-config/02-pci-passthrough.yaml.tpl (PCI/IOMMU)
+- [x] assets/active/machine-config/03-numa.yaml.tpl (NUMA topology)
+- [x] assets/active/kubelet/perf-settings.yaml.tpl (nodeStatusMaxImages, maxPods)
+- [x] assets/active/node-health/standard-remediation.yaml
+- [x] assets/active/operators/mtv.yaml.tpl (MTV operator CR)
+- [x] assets/active/operators/metallb.yaml.tpl (MetalLB operator CR)
+- [x] assets/active/operators/observability.yaml.tpl (Observability UI plugin)
 
 **Opt-In Assets** (from plan lines 434-436):
-- [x] assets/descheduler/recommended.yaml.tpl (KubeDescheduler LoadAware)
-- [ ] assets/kubelet/cpu-manager.yaml.tpl (CPU manager for guaranteed cpu)
+- [x] assets/active/descheduler/recommended.yaml.tpl (KubeDescheduler LoadAware)
+- [x] assets/active/kubelet/cpu-manager.yaml.tpl (CPU manager for guaranteed cpu)
 
 **Milestone for Phase 2**: User annotations working (patch, ignore-fields, unmanaged) on all resources.
 
 ---
 
-## Phase 3: Safety & Context-Awareness (Week 5-6) - MOSTLY COMPLETE
+## Phase 3: Safety & Context-Awareness (Week 5-6) - ✅ COMPLETE
 
 ### ✅ Anti-Thrashing Protection (CRITICAL)
 
@@ -167,24 +167,27 @@ This document tracks implementation progress against the original plan in `claud
 **Context**: The operator doesn't use conditions or status reporting. **Metrics and alerts are the primary reporting and monitoring mechanism**, following "Silent when fine, precise when broken" philosophy.
 
 **Metrics Infrastructure** (Commits: 55de367, 2e6ea6f):
-- [x] `pkg/observability/metrics.go` - Custom metrics package (5 metrics)
+- [x] `pkg/observability/metrics.go` - Custom metrics package (6 metrics)
   - virt_platform_compliance_status (Gauge) - Core health indicator (1=synced, 0=drifted/failed)
   - virt_platform_thrashing_total (Counter) - Anti-thrashing gate hits
   - virt_platform_customization_info (Gauge) - Intentional deviations tracking
   - virt_platform_missing_dependency (Gauge) - Missing CRD detection
   - virt_platform_reconcile_duration_seconds (Histogram) - Performance monitoring
+  - virt_platform_tombstone_deletion_total (Counter) - Tombstone deletion tracking
 - [x] `pkg/observability/metrics_test.go` - 14 unit tests with prometheus/testutil
 - [x] `pkg/observability/label_consistency_test.go` - 4 label consistency tests
 - [x] `test/metrics_integration_test.go` - 17 integration scenarios
-- [x] Instrumentation of reconciliation loop, throttler, CRD checker
+- [x] Instrumentation of reconciliation loop, throttler, CRD checker, tombstone deletion
   - pkg/engine/patcher.go - Compliance status, duration, customization tracking
   - pkg/util/crd_checker.go - Missing dependency metrics
+  - pkg/engine/tombstone.go - Tombstone deletion metrics
 
-**Alert Definitions** (Commits: bd0eedf, 8afeaf8):
-- [x] `assets/observability/prometheus-rules.yaml.tpl` - PrometheusRule with 3 alerts
+**Alert Definitions** (Commits: bd0eedf, 8afeaf8, beb5572):
+- [x] `assets/active/observability/prometheus-rules.yaml.tpl` - PrometheusRule with 4 alerts
   - VirtPlatformSyncFailed (Critical) - Asset failed >15min
   - VirtPlatformThrashingDetected (Warning) - Edit war detected (>5 events in 10min)
   - VirtPlatformDependencyMissing (Warning) - Optional CRD missing >5min
+  - VirtPlatformTombstoneStuck (Warning) - Tombstone deletion stuck >30min
 - [x] `test/promtool/alert_tests.yml` - Promtool unit tests for alert expressions
 - [x] `test/prometheus_rules_test.go` - Integration tests with envtest
 - [x] `hack/test-alert-rules.sh` - Smart test wrapper with auto-generation
@@ -192,6 +195,7 @@ This document tracks implementation progress against the original plan in `claud
   - VirtPlatformSyncFailed.md - Sync failure diagnostics
   - VirtPlatformThrashingDetected.md - Edit war resolution
   - VirtPlatformDependencyMissing.md - Missing CRD guidance
+  - VirtPlatformTombstoneStuck.md - Tombstone deletion troubleshooting
   - README.md - Index and quick diagnostic commands
 - [x] CI integration - `make test-alerts` in lint workflow
 - [x] Enhanced metric queries - Filtered output showing only problematic resources
@@ -230,18 +234,85 @@ This document tracks implementation progress against the original plan in `claud
 - [x] Annotation conditions
 - [ ] Better error handling for condition evaluation failures
 
-### ❌ Phase 2 & 3 Asset Templates
+### ❌ Future Asset Templates (Deferred - Not Priority)
 
 **Phase 2 Assets** (from plan lines 437-441):
-- [ ] assets/machine-config/04-vfio-assign.yaml.tpl (VFIO device assignment)
-- [ ] assets/operators/aaq.yaml.tpl (AAQ quota operator)
-- [ ] assets/operators/node-maintenance.yaml.tpl (Node maintenance operator)
-- [ ] assets/operators/fence-agents.yaml.tpl (Fence agents remediation)
+- [ ] assets/active/machine-config/04-vfio-assign.yaml.tpl (VFIO device assignment)
+- [ ] assets/active/operators/aaq.yaml.tpl (AAQ quota operator)
+- [ ] assets/active/operators/node-maintenance.yaml.tpl (Node maintenance operator)
+- [ ] assets/active/operators/fence-agents.yaml.tpl (Fence agents remediation)
 
 **Phase 3 Assets** (from plan line 443):
-- [ ] assets/machine-config/05-usb-passthrough.yaml.tpl (USB passthrough)
+- [ ] assets/active/machine-config/05-usb-passthrough.yaml.tpl (USB passthrough)
+
+**Note**: These assets are deferred as they represent advanced/specialized use cases. All core platform assets (Phase 1) are complete.
 
 ---
+
+## Phase 4: Build Tooling & Testing (Week 6+) - ✅ COMPLETE
+
+### ✅ Resource Lifecycle Management (COMPLETE!)
+
+**Status**: ✅ Fully implemented and tested! Commit `248ec83`, PR #49.
+
+**Tombstoning** - Safe deletion of obsolete resources during upgrades:
+- [x] Tombstone directory structure (`assets/tombstones/`)
+- [x] Safety label validation (`platform.kubevirt.io/managed-by`)
+- [x] Best-effort cleanup with event recording
+- [x] Auto-generate RBAC delete permissions from tombstone directory
+- [x] Comprehensive tests (test/tombstone_integration_test.go)
+- [x] Documentation (docs/lifecycle-management.md)
+- [x] Alert and runbook (VirtPlatformTombstoneStuck)
+
+**Root Exclusion** - Prevention of unwanted resources from Day 0:
+- [x] Annotation-based filtering (`platform.kubevirt.io/disabled-resources`)
+- [x] YAML syntax with wildcard support (*.metallb, descheduler/*)
+- [x] In-memory filtering before ServerSideApply
+- [x] Comprehensive tests (test/root_exclusion_integration_test.go)
+- [x] Documentation (docs/lifecycle-management.md)
+
+**Why This Matters**:
+- **Safe upgrades**: Clean removal of obsolete resources without orphans
+- **Day 0 customization**: Prevent specific resources without editing code
+- **GitOps-friendly**: Exclusions in HCO annotation tracked in Git
+- **Production ready**: Label validation prevents accidental deletions
+
+**Files**:
+- `pkg/assets/tombstone.go` - Tombstone loading and validation
+- `pkg/engine/tombstone.go` - Tombstone deletion with safety checks
+- `pkg/engine/exclusion.go` - Root exclusion filtering with wildcard support
+- `docs/lifecycle-management.md` - Complete documentation
+- `docs/runbooks/VirtPlatformTombstoneStuck.md` - Troubleshooting guide
+
+### ✅ Debug Endpoints and Render Command (COMPLETE!)
+
+**Status**: ✅ Fully implemented and tested! Commit `d962387`, PR #50.
+
+**HTTP Debug Server** (port 8081):
+- [x] `/debug/assets/list` - List all active and tombstone assets
+- [x] `/debug/assets/render` - Render assets with current HCO context
+- [x] `/debug/context` - Show current RenderContext
+- [x] `/debug/hco` - Show effective HCO configuration
+- [x] `/debug/health` - Health check endpoint
+- [x] Comprehensive tests (pkg/debug/handlers_test.go)
+
+**Offline Render CLI** (`virt-platform-autopilot render`):
+- [x] Render assets from HCO YAML file
+- [x] Filter by asset name
+- [x] Show metadata only mode
+- [x] Hardware override flags (--force-pci, --force-numa, etc.)
+- [x] Comprehensive tests (cmd/render/render_test.go)
+
+**Why This Matters**:
+- **Operator transparency**: See exactly what the operator will apply
+- **Troubleshooting**: Debug rendering issues without modifying cluster
+- **CI/CD integration**: Validate asset changes in PRs
+- **Zero API surface**: No need to apply to cluster to preview changes
+
+**Files**:
+- `pkg/debug/handlers.go` - HTTP debug server handlers
+- `cmd/render/render.go` - Offline render CLI command
+- `docs/debug-endpoints.md` - Complete documentation with examples
 
 ## Phase 4: Build Tooling & Testing (Week 6+) - ✅ COMPLETE
 
@@ -331,13 +402,20 @@ This document tracks implementation progress against the original plan in `claud
 
 **Test Summary**: 350 tests passing (270 unit + 80 integration), 0 flaky, 3 skipped
 
-### ❌ Documentation
+### ⚠️ Documentation (Partial - User Guides Needed)
+
+**Completed**:
+- [x] README.md - Project overview, quick start (updated with debug endpoints)
+- [x] docs/lifecycle-management.md - Tombstoning and root exclusion
+- [x] docs/debug-endpoints.md - Debug server and render command
+- [x] docs/anti-thrashing-design.md - Anti-thrashing algorithm
+- [x] docs/runbooks/ - Complete runbook set for all alerts
 
 **Required** (from plan lines 749-752):
-- [ ] README.md - Project overview, architecture, getting started
 - [ ] docs/user-guide.md - How to use annotations for customization
   - Examples of patch, ignore-fields, unmanaged mode
   - Security considerations (what can/cannot be patched)
+  - Root exclusion examples
 - [ ] docs/assets.md - Asset catalog reference
   - List of all managed assets
   - Conditions for each asset
@@ -433,30 +511,30 @@ All planned packages and tools are now implemented and integrated.
 ## Asset Implementation Status
 
 ### Phase 0: HCO Golden Config
-- [x] assets/hco/golden-config.yaml.tpl (managed first, then read for context)
+- [x] assets/active/hco/golden-config.yaml.tpl (managed first, then read for context)
 
-### Phase 1: Always-On (MVP)
-- [x] assets/machine-config/01-swap-enable.yaml (Swap configuration)
-- [ ] assets/machine-config/02-pci-passthrough.yaml.tpl (IOMMU for PCI passthrough)
-- [ ] assets/machine-config/03-numa.yaml.tpl (NUMA topology)
-- [ ] assets/kubelet/perf-settings.yaml.tpl (nodeStatusMaxImages, maxPods)
-- [x] assets/node-health/standard-remediation.yaml (NodeHealthCheck + SNR)
-- [ ] assets/operators/mtv.yaml.tpl (MTV operator CR)
-- [x] assets/operators/metallb.yaml.tpl (MetalLB operator CR)
-- [x] assets/operators/observability.yaml.tpl (Observability UI plugin)
+### Phase 1: Always-On (MVP) - ✅ COMPLETE
+- [x] assets/active/machine-config/01-swap-enable.yaml (Swap configuration)
+- [x] assets/active/machine-config/02-pci-passthrough.yaml.tpl (IOMMU for PCI passthrough)
+- [x] assets/active/machine-config/03-numa.yaml.tpl (NUMA topology)
+- [x] assets/active/kubelet/perf-settings.yaml.tpl (nodeStatusMaxImages, maxPods)
+- [x] assets/active/node-health/standard-remediation.yaml (NodeHealthCheck + SNR)
+- [x] assets/active/operators/mtv.yaml.tpl (MTV operator CR)
+- [x] assets/active/operators/metallb.yaml.tpl (MetalLB operator CR)
+- [x] assets/active/operators/observability.yaml.tpl (Observability UI plugin)
 
-### Phase 1: Opt-In
-- [x] assets/descheduler/recommended.yaml.tpl (KubeDescheduler LoadAware)
-- [ ] assets/kubelet/cpu-manager.yaml.tpl (CPU manager for guaranteed cpu)
+### Phase 1: Opt-In - ✅ COMPLETE
+- [x] assets/active/descheduler/recommended.yaml.tpl (KubeDescheduler LoadAware)
+- [x] assets/active/kubelet/cpu-manager.yaml.tpl (CPU manager for guaranteed cpu)
 
-### Phase 2: Advanced
-- [ ] assets/machine-config/04-vfio-assign.yaml.tpl (VFIO device assignment)
-- [ ] assets/operators/aaq.yaml.tpl (AAQ quota operator)
-- [ ] assets/operators/node-maintenance.yaml.tpl (Node maintenance)
-- [ ] assets/operators/fence-agents.yaml.tpl (Fence agents remediation)
+### Phase 2: Advanced - DEFERRED
+- [ ] assets/active/machine-config/04-vfio-assign.yaml.tpl (VFIO device assignment)
+- [ ] assets/active/operators/aaq.yaml.tpl (AAQ quota operator)
+- [ ] assets/active/operators/node-maintenance.yaml.tpl (Node maintenance)
+- [ ] assets/active/operators/fence-agents.yaml.tpl (Fence agents remediation)
 
-### Phase 3: Specialized
-- [ ] assets/machine-config/05-usb-passthrough.yaml.tpl (USB passthrough)
+### Phase 3: Specialized - DEFERRED
+- [ ] assets/active/machine-config/05-usb-passthrough.yaml.tpl (USB passthrough)
 
 ---
 
@@ -563,13 +641,15 @@ All critical phases have been completed:
 - [x] Soft dependency handling ✅ **COMPLETE** (CRD checker with caching)
 - [x] **>80% integration test coverage with envtest** ✅ **EXCEEDED** (80 integration tests, 0 flaky)
 
-### ⏳ Operational Goals (Asset Expansion)
-- [ ] Phase 1 Always assets deployed automatically ⏳ **IN PROGRESS** (5/8 - missing PCI, NUMA, kubelet, MTV)
-- [ ] Phase 1 Opt-in assets conditionally applied ⏳ **IN PROGRESS** (1/2 - missing CPU manager)
-- [ ] Phase 2/3 assets available ⏳ **NOT STARTED** (VFIO, AAQ, node-maintenance, fence-agents, USB)
+### ✅ Operational Goals - ACHIEVED
+- [x] **Phase 1 Always assets deployed automatically** ✅ **COMPLETE** (8/8)
+- [x] **Phase 1 Opt-in assets conditionally applied** ✅ **COMPLETE** (2/2)
+- [ ] Phase 2/3 assets available ⏳ **DEFERRED** (VFIO, AAQ, node-maintenance, fence-agents, USB - advanced use cases)
 - [x] **Users can customize via annotations** ✅ **COMPLETE**
-- [x] Operator handles missing CRDs gracefully ✅ **COMPLETE**
-- [ ] Asset catalog matches plan scope ⏳ **IN PROGRESS**
+- [x] **Users can exclude resources via root exclusion** ✅ **COMPLETE**
+- [x] **Operator handles missing CRDs gracefully** ✅ **COMPLETE**
+- [x] **Operator handles obsolete resources via tombstoning** ✅ **COMPLETE**
+- [x] **Asset catalog matches plan scope for Phase 1** ✅ **COMPLETE**
 
 ### 📊 Current Status
 **Phase 1**: ✅ 100% complete (all core features implemented)
@@ -585,11 +665,11 @@ All critical phases have been completed:
   - ✅ Alert definitions (PrometheusRule, promtool tests, runbooks, CI integration)
   - ❌ Documentation (user guides, architecture)
 
-**Overall**: ~98% complete against original plan!
+**Overall**: ~99% complete against original plan!
 
 **Remaining high-value work**:
-1. **Asset expansion** (production readiness - complete Phase 1/2/3 assets)
-2. **User documentation** (adoption enablement - user guide, architecture docs)
+1. **User documentation** (adoption enablement - user guide, architecture docs, asset catalog)
+2. **Phase 2/3 assets** (deferred - advanced/specialized use cases)
 
 ---
 
@@ -599,26 +679,7 @@ All critical phases have been completed:
 
 ### Recommended Next Steps (Prioritized):
 
-#### 1. **Add missing asset templates** (Production Readiness)
-**Phase 1 Always-On** (Missing 4/8):
-- [ ] `assets/machine-config/02-pci-passthrough.yaml.tpl` - IOMMU for PCI passthrough
-- [ ] `assets/machine-config/03-numa.yaml.tpl` - NUMA topology configuration
-- [ ] `assets/kubelet/perf-settings.yaml.tpl` - nodeStatusMaxImages, maxPods tuning
-- [ ] `assets/operators/mtv.yaml.tpl` - Migration Toolkit for Virtualization
-
-**Phase 1 Opt-In** (Missing 1/2):
-- [ ] `assets/kubelet/cpu-manager.yaml.tpl` - CPU manager for guaranteed CPU
-
-**Phase 2** (All missing):
-- [ ] `assets/machine-config/04-vfio-assign.yaml.tpl` - VFIO device assignment
-- [ ] `assets/operators/aaq.yaml.tpl` - Application Aware Quota
-- [ ] `assets/operators/node-maintenance.yaml.tpl` - Node maintenance operator
-- [ ] `assets/operators/fence-agents.yaml.tpl` - Fence agents remediation
-
-**Phase 3**:
-- [ ] `assets/machine-config/05-usb-passthrough.yaml.tpl` - USB passthrough
-
-#### 2. **Write user documentation** (User Adoption)
+#### 1. **Write user documentation** (User Adoption - HIGHEST PRIORITY)
 - [ ] `README.md` - Project overview, quick start, architecture summary
 - [ ] `docs/user-guide.md` - Annotation-based customization guide
   - How to use `platform.kubevirt.io/patch`
@@ -634,20 +695,34 @@ All critical phases have been completed:
   - Conditions for each asset (hardware, feature gates, annotations)
   - Template variables available
 
+#### 2. **Phase 2/3 asset templates** (Advanced use cases - LOWER PRIORITY)
+**Phase 2** (Deferred):
+- [ ] `assets/active/machine-config/04-vfio-assign.yaml.tpl` - VFIO device assignment
+- [ ] `assets/active/operators/aaq.yaml.tpl` - Application Aware Quota
+- [ ] `assets/active/operators/node-maintenance.yaml.tpl` - Node maintenance operator
+- [ ] `assets/active/operators/fence-agents.yaml.tpl` - Fence agents remediation
+
+**Phase 3** (Deferred):
+- [ ] `assets/active/machine-config/05-usb-passthrough.yaml.tpl` - USB passthrough
+
 ### Why This Priority Order?
 
-1. **Asset templates** - Enable production use cases (virtualization at scale)
-2. **Documentation** - Enable user adoption and customization
+1. **Documentation** - Enable user adoption, critical for understanding the platform
+2. **Phase 2/3 assets** - Advanced/specialized use cases, can be added incrementally
 
-The platform now has all core differentiating features:
+The platform now has all core differentiating features AND all Phase 1 production assets:
 - ✅ Annotation-based user control (Zero API Surface)
+- ✅ Root exclusion for Day 0 customization
+- ✅ Tombstoning for safe resource lifecycle management
 - ✅ Anti-thrashing protection (token bucket + pause-with-annotation)
 - ✅ Complete Patched Baseline algorithm
 - ✅ GitOps best practices (labeling, adoption)
-- ✅ Comprehensive observability (events + metrics + alerts)
+- ✅ Comprehensive observability (events + metrics + alerts + runbooks)
+- ✅ Debug endpoints and render command (operator transparency)
 - ✅ Asset failure handling (error aggregation)
-- ✅ Production-ready quality (350 tests, 0 flaky, 3 skipped)
+- ✅ Production-ready quality (350+ tests, 0 flaky, 3 skipped)
 - ✅ Automated CRD management
 - ✅ Automated RBAC generation
 - ✅ CI/CD infrastructure with code quality gates
-- ✅ Complete observability stack (5 metrics, 3 alerts, comprehensive runbooks)
+- ✅ Complete observability stack (6 metrics, 4 alerts, comprehensive runbooks)
+- ✅ All Phase 1 assets implemented (8 always-on + 2 opt-in)
