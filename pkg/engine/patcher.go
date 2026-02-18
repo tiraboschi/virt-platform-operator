@@ -361,7 +361,8 @@ func (p *Patcher) ReconcileAsset(ctx context.Context, assetMeta *assets.AssetMet
 	}
 
 	// Step 7: Apply via Server-Side Apply
-	applied, err := p.applier.Apply(ctx, desired, true)
+	// Don't force ownership - cooperate with other operators managing additional fields
+	applied, err := p.applier.Apply(ctx, desired, false)
 	if err != nil {
 		// Set compliance status to failed (0)
 		observability.SetCompliance(desired, 0)

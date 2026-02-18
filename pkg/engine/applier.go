@@ -83,8 +83,13 @@ func (a *Applier) Apply(ctx context.Context, obj *unstructured.Unstructured, for
 	// Apply using SSA
 	// Convert unstructured to ApplyConfiguration for the modern Apply() API
 	applyOptions := []client.ApplyOption{
-		client.ForceOwnership,
 		client.FieldOwner(FieldManager),
+	}
+
+	// Only use ForceOwnership when explicitly requested
+	// ForceOwnership should be used sparingly as it can cause conflicts with other operators
+	if force {
+		applyOptions = append(applyOptions, client.ForceOwnership)
 	}
 
 	logger.V(1).Info("Applying object",
