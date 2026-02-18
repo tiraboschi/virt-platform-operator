@@ -1,18 +1,19 @@
 package test
 
 import (
-	"os"
-	"path/filepath"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
+
+	"github.com/kubevirt/virt-platform-autopilot/pkg/assets"
+	pkgcontext "github.com/kubevirt/virt-platform-autopilot/pkg/context"
+	"github.com/kubevirt/virt-platform-autopilot/pkg/engine"
 )
 
 var _ = Describe("Prometheus Alert Rules", func() {
 	var prometheusRuleObj *unstructured.Unstructured
+	var renderer *engine.Renderer
 
 	BeforeEach(func() {
 		// Install PrometheusRule CRD for validation
@@ -24,14 +25,29 @@ var _ = Describe("Prometheus Alert Rules", func() {
 			_ = UninstallCRDs(ctx, k8sClient, CRDSetPrometheus)
 		})
 
-		// Read and parse PrometheusRule template once for all tests
-		templatePath := filepath.Join("..", "assets", "active", "observability", "prometheus-rules.yaml.tpl")
-		data, err := os.ReadFile(templatePath)
-		Expect(err).NotTo(HaveOccurred(), "PrometheusRule template should exist")
+		// Initialize renderer to actually process the template
+		loader := assets.NewLoader()
+		registry, err := assets.NewRegistry(loader)
+		Expect(err).NotTo(HaveOccurred(), "Should create asset registry")
 
-		prometheusRuleObj = &unstructured.Unstructured{}
-		err = yaml.Unmarshal(data, prometheusRuleObj)
-		Expect(err).NotTo(HaveOccurred(), "PrometheusRule YAML should be valid")
+		renderer = engine.NewRenderer(loader)
+		renderer.SetClient(k8sClient)
+
+		// Get asset metadata from registry
+		assetMeta, err := registry.GetAsset("prometheus-alerts")
+		Expect(err).NotTo(HaveOccurred(), "Should find prometheus-alerts asset in registry")
+		Expect(assetMeta).NotTo(BeNil())
+
+		// Render the template through the engine (this catches template syntax errors)
+		renderCtx := &pkgcontext.RenderContext{
+			HCO: pkgcontext.NewMockHCO("kubevirt-hyperconverged", "openshift-cnv"),
+		}
+
+		rendered, err := renderer.RenderAsset(assetMeta, renderCtx)
+		Expect(err).NotTo(HaveOccurred(), "PrometheusRule template should render without errors")
+
+		// The renderer returns an unstructured object
+		prometheusRuleObj = rendered
 	})
 
 	It("should have valid PrometheusRule YAML syntax", func() {
@@ -158,5 +174,67 @@ var _ = Describe("Prometheus Alert Rules", func() {
 		err = k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), created)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(created.GetName()).To(Equal("virt-platform-autopilot-alerts"))
+	})
+
+	It("should properly escape Prometheus template variables", func() {
+		By("verifying annotations contain Prometheus template syntax (not Go template syntax)")
+		groups, _, _ := unstructured.NestedSlice(prometheusRuleObj.Object, "spec", "groups")
+
+		// Get VirtPlatformSyncFailed alert annotations
+		criticalGroup := groups[0].(map[string]interface{})
+		criticalRules := criticalGroup["rules"].([]interface{})
+		syncFailedAlert := criticalRules[0].(map[string]interface{})
+		annotations := syncFailedAlert["annotations"].(map[string]interface{})
+
+		summary := annotations["summary"].(string)
+		description := annotations["description"].(string)
+
+		// Verify Prometheus template variables are present (not rendered by Go template)
+		Expect(summary).To(ContainSubstring("{{ $labels.kind }}"), "Summary should contain Prometheus template variable for kind")
+		Expect(summary).To(ContainSubstring("{{ $labels.name }}"), "Summary should contain Prometheus template variable for name")
+		Expect(description).To(ContainSubstring("{{ $labels.namespace }}"), "Description should contain Prometheus template variable for namespace")
+		Expect(description).To(ContainSubstring("{{ $value }}"), "Description should contain Prometheus template variable for value")
+
+		By("verifying all alerts have properly escaped Prometheus variables")
+		for _, group := range groups {
+			groupMap := group.(map[string]interface{})
+			rules := groupMap["rules"].([]interface{})
+			for _, rule := range rules {
+				alert := rule.(map[string]interface{})
+				alertName := alert["alert"].(string)
+				alertAnnotations := alert["annotations"].(map[string]interface{})
+
+				alertSummary := alertAnnotations["summary"].(string)
+				alertDescription := alertAnnotations["description"].(string)
+
+				// All alerts should use Prometheus template variables, not Go template output
+				Expect(alertSummary).To(MatchRegexp(`\{\{.*\$labels.*\}\}`),
+					"Alert %s summary should contain Prometheus template variables", alertName)
+				Expect(alertDescription).To(MatchRegexp(`\{\{.*\$labels.*\}\}`),
+					"Alert %s description should contain Prometheus template variables", alertName)
+
+				// Ensure no Go template artifacts (like <no value> or empty strings from failed rendering)
+				Expect(alertSummary).NotTo(ContainSubstring("<no value>"),
+					"Alert %s summary should not have Go template rendering errors", alertName)
+				Expect(alertDescription).NotTo(ContainSubstring("<no value>"),
+					"Alert %s description should not have Go template rendering errors", alertName)
+			}
+		}
+	})
+
+	It("should render successfully through the template engine", func() {
+		By("verifying the template was processed by Go template engine")
+		// This test ensures the template syntax is valid and rendering completes
+		// The fact that prometheusRuleObj exists proves the template rendered successfully
+
+		Expect(prometheusRuleObj).NotTo(BeNil(), "Template should render to a valid object")
+		Expect(prometheusRuleObj.GetKind()).To(Equal("PrometheusRule"))
+
+		By("verifying no template syntax errors occurred")
+		// If there were template syntax errors, the BeforeEach would have failed
+		// This test documents that expectation
+		_, found, err := unstructured.NestedFieldNoCopy(prometheusRuleObj.Object, "spec", "groups")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue(), "Template should render all fields correctly")
 	})
 })

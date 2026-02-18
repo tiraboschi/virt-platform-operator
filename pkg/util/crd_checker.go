@@ -42,6 +42,7 @@ var ComponentKindMapping = map[string]string{
 	"MetalLB":                "metallbs.metallb.io",
 	"UIPlugin":               "uiplugins.console.openshift.io",
 	"KubeDescheduler":        "kubedeschedulers.operator.openshift.io",
+	"PrometheusRule":         "prometheusrules.monitoring.coreos.com",
 	"SelfNodeRemediation":    "selfnoderemediations.self-node-remediation.medik8s.io",
 	"FenceAgentsRemediation": "fenceagentsremediations.fence-agents-remediation.medik8s.io",
 	"HyperConverged":         "hyperconvergeds.hco.kubevirt.io", // Always required

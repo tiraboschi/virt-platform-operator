@@ -3,11 +3,10 @@ kind: Kustomization
 
 namespace: openshift-cnv
 
-namePrefix: virt-platform-autopilot-
-
 resources:
   - ../manager
   - ../rbac
+  - ../observability
 
 commonLabels:
   app.kubernetes.io/name: virt-platform-autopilot

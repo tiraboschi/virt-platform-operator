@@ -78,12 +78,8 @@ func staticRules() []RBACRule {
 			Resources: []string{"customresourcedefinitions"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
-		// Rule 6: PrometheusRule (for template introspection - read-only)
-		{
-			APIGroups: []string{"monitoring.coreos.com"},
-			Resources: []string{"prometheusrules"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
+		// PrometheusRule permissions are now generated dynamically from assets/active/observability/prometheus-rules.yaml.tpl
+		// This gives us both read access (for template introspection) and write access (for managing alerts)
 	}
 }
 
@@ -142,7 +138,16 @@ func preprocessTemplate(content []byte) []byte {
 	}
 	content = []byte(strings.Join(filtered, "\n"))
 
-	// Replace remaining {{ .* }} expressions with "dummy-value" for parsing
+	// Replace template expressions with dummy values for parsing
+	// First, handle backtick-enclosed raw strings (for Prometheus template variables)
+	// These are typically already inside quoted strings, so don't add extra quotes
+	// Example: "text {{`{{ $labels.kind }}`}}" -> "text dummy-value"
+	backtickRe := regexp.MustCompile("\\{\\{`[^`]*`\\}\\}")
+	content = backtickRe.ReplaceAll(content, []byte(`dummy-value`))
+
+	// Then, handle regular template expressions
+	// These may need quotes if they're not already in a quoted context
+	// Example: {{ .Namespace }} -> "dummy-value"
 	exprRe := regexp.MustCompile(`\{\{[^}]+\}\}`)
 	return exprRe.ReplaceAll(content, []byte(`"dummy-value"`))
 }
@@ -347,15 +352,13 @@ func formatRulesWithComments(rules []RBACRule) string {
 	writeRule(&builder, &rules[3])
 	builder.WriteString("  # CRD Discovery (for soft dependency detection and template introspection)\n")
 	writeRule(&builder, &rules[4])
-	builder.WriteString("  # PrometheusRule (for template introspection - read-only)\n")
-	writeRule(&builder, &rules[5])
 
 	// Dynamic rules from assets
 	builder.WriteString("  # ========================================\n")
 	builder.WriteString("  # Managed Resources (Dynamic - from assets/)\n")
 	builder.WriteString("  # ========================================\n")
 
-	for i := 6; i < len(rules); i++ {
+	for i := 5; i < len(rules); i++ {
 		// Add comment based on API group
 		rule := &rules[i]
 		comment := getCommentForAPIGroup(rule.APIGroups[0])
@@ -419,6 +422,8 @@ func getCommentForAPIGroup(group string) string {
 		return "Migration Toolkit for Virtualization (MTV)"
 	case "metallb.io":
 		return "MetalLB"
+	case "monitoring.coreos.com":
+		return "Prometheus Alert Rules"
 	case "observability.openshift.io":
 		return "Cluster Observability"
 	default:
