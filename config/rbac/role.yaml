@@ -59,15 +59,6 @@ rules:
       - get
       - list
       - watch
-  # PrometheusRule (for template introspection - read-only)
-  - apiGroups:
-      - monitoring.coreos.com
-    resources:
-      - prometheusrules
-    verbs:
-      - get
-      - list
-      - watch
   # ========================================
   # Managed Resources (Dynamic - from assets/)
   # ========================================
@@ -113,6 +104,18 @@ rules:
       - metallb.io
     resources:
       - metallbs
+    verbs:
+      - create
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Prometheus Alert Rules
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - prometheusrules
     verbs:
       - create
       - get

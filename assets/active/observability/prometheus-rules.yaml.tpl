@@ -24,15 +24,15 @@ spec:
             severity: critical
             operator: virt-platform-autopilot
           annotations:
-            summary: "virt-platform-autopilot failed to sync {{ $labels.kind }}/{{ $labels.name }}"
+            summary: "virt-platform-autopilot failed to sync {{`{{ $labels.kind }}/{{ $labels.name }}`}}"
             description: |-
               virt-platform-autopilot has failed to apply the Golden State
-              to {{ $labels.kind }}/{{ $labels.name }} in namespace {{ $labels.namespace }}
+              to {{`{{ $labels.kind }}/{{ $labels.name }}`}} in namespace {{`{{ $labels.namespace }}`}}
               for 15 minutes.
 
               This indicates the automation is broken and requires immediate attention.
 
-              Current compliance status: {{ $value }}
+              Current compliance status: {{`{{ $value }}`}}
               (0 = Drifted/Sync Failed, 1 = Synced)
             runbook_url: "https://github.com/kubevirt/virt-platform-autopilot/blob/main/docs/runbooks/VirtPlatformSyncFailed.md"
 
@@ -50,14 +50,14 @@ spec:
             severity: warning
             operator: virt-platform-autopilot
           annotations:
-            summary: "Edit war detected on {{ $labels.kind }}/{{ $labels.name }}"
+            summary: "Edit war detected on {{`{{ $labels.kind }}/{{ $labels.name }}`}}"
             description: |-
               virt-platform-autopilot detected an "Edit War" on
-              {{ $labels.kind }}/{{ $labels.name }} in namespace {{ $labels.namespace }}.
+              {{`{{ $labels.kind }}/{{ $labels.name }}`}} in namespace {{`{{ $labels.namespace }}`}}.
 
               Automation has been paused to protect the API server from thrashing.
 
-              Thrashing events in last 10 minutes: {{ $value }}
+              Thrashing events in last 10 minutes: {{`{{ $value }}`}}
 
               This indicates another controller or user is modifying the resource,
               conflicting with the autopilot's desired state.
@@ -75,10 +75,10 @@ spec:
             severity: warning
             operator: virt-platform-autopilot
           annotations:
-            summary: "Missing optional CRD: {{ $labels.kind }}.{{ $labels.version }}.{{ $labels.group }}"
+            summary: "Missing optional CRD: {{`{{ $labels.kind }}.{{ $labels.version }}.{{ $labels.group }}`}}"
             description: |-
               virt-platform-autopilot detected that the optional CRD
-              {{ $labels.kind }}.{{ $labels.version }}.{{ $labels.group }} is missing
+              {{`{{ $labels.kind }}.{{ $labels.version }}.{{ $labels.group }}`}} is missing
               from the cluster.
 
               Related platform features (e.g., LoadAware Scheduling, Node Health Checks)
@@ -100,12 +100,12 @@ spec:
             severity: warning
             operator: virt-platform-autopilot
           annotations:
-            summary: "Tombstone deletion stuck for {{ $labels.kind }}/{{ $labels.name }}"
+            summary: "Tombstone deletion stuck for {{`{{ $labels.kind }}/{{ $labels.name }}`}}"
             description: |-
               virt-platform-autopilot cannot delete tombstoned resource
-              {{ $labels.kind }}/{{ $labels.name }} in namespace {{ $labels.namespace }}.
+              {{`{{ $labels.kind }}/{{ $labels.name }}`}} in namespace {{`{{ $labels.namespace }}`}}.
 
-              Status: {{ $value }}
+              Status: {{`{{ $value }}`}}
               (-1 = deletion error, -2 = label mismatch)
 
               Label mismatch: Resource exists but lacks the required management label

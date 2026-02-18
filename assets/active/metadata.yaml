@@ -69,6 +69,15 @@ assets:
     reconcile_order: 1
     conditions: []
 
+  # Phase 1: Always installed - PrometheusRule for alerts (soft dependency on Prometheus Operator CRD)
+  - name: prometheus-alerts
+    path: active/observability/prometheus-rules.yaml.tpl
+    phase: 1
+    install: always
+    component: PrometheusRule
+    reconcile_order: 1
+    conditions: []
+
   # Phase 1: Optional Operators (opt-in for clusters with CRDs)
   - name: mtv-operator
     path: active/operators/mtv.yaml.tpl

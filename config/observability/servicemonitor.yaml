@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: virt-platform-autopilot-metrics
+  namespace: openshift-cnv
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: virt-platform-autopilot
+      app.kubernetes.io/component: operator
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
